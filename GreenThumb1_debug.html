@@ -31,7 +31,7 @@
         <section id="home" class="screen active p-4 space-y-6">
             <div class="bg-green-600 rounded-[32px] p-6 text-white shadow-lg relative overflow-hidden">
                 <div class="relative z-10">
-                    <h2 class="text-2xl font-bold italic">La tua Giungla 🌿</h2>
+                    <h2 class="text-2xl font-bold italic">La tua Giungla ðŸŒ¿</h2>
                     <p class="opacity-90 text-sm mt-1" id="plantCount">Inizializzazione...</p>
                 </div>
                 <svg class="absolute -right-6 -bottom-6 w-32 h-32 opacity-20 rotate-12" fill="currentColor" viewBox="0 0 24 24"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,11 17,8 17,8Z"/></svg>
@@ -115,9 +115,9 @@
     <script>
         // ==========================================
         // CONFIGURAZIONE: INCOLLA QUI LA TUA CHIAVE
-        // ⚠️ Non condividere questo file con la chiave inserita!
+        // âš ï¸ Non condividere questo file con la chiave inserita!
         // ==========================================
-        const API_KEY = "INSERISCI_QUI_LA_TUA_API_KEY";
+        const API_KEY = "AIzaSyC0oe767N2Ww2YYPVIDuZytN25RhxJiVkQ";
 
         // Combinazioni valide endpoint/modello (solo quelle compatibili)
         const MODELS = [
@@ -158,7 +158,7 @@
             window.scrollTo(0,0);
         }
 
-        // Ridimensionamento per stabilità mobile
+        // Ridimensionamento per stabilitÃ  mobile
         async function resizeImg(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
@@ -217,7 +217,7 @@
                         const data = await response.json();
 
                         if (response.ok) {
-                            log(`✨ SUCCESSO! Usando ${model}`);
+                            log(`âœ¨ SUCCESSO! Usando ${model}`);
                             const rawText = data.candidates[0].content.parts[0].text;
                             const json = JSON.parse(rawText.replace(/```json|```/g, "").trim());
                             document.getElementById('pName').value = json.name;
@@ -227,11 +227,11 @@
                             loader.classList.add('hidden');
                             return; // Uscita dal loop al primo successo
                         } else {
-                            log(`❌ ${response.status}: ${data.error ? data.error.message : "Unknown error"}`);
+                            log(`âŒ ${response.status}: ${data.error ? data.error.message : "Unknown error"}`);
                             log(`   status: ${data.error ? data.error.status : "?"}`);
                         }
                     } catch (err) {
-                        log(`⚠️ CATCH: ${err.message}`);
+                        log(`âš ï¸ CATCH: ${err.message}`);
                     }
             }
             
