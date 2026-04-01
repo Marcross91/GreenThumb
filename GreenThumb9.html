@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GreenThumb AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; -webkit-tap-highlight-color: transparent; background-color: #f8fafc; }
+        .screen { display: none; min-height: 100vh; padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .screen.active { display: block; animation: fadeIn 0.3s ease-out; padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px)); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .shadow-up { box-shadow: 0 -5px 20px rgba(0,0,0,0.05); }
+        .cal-day { aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:50%; font-size:12px; font-weight:600; cursor:pointer; position:relative; transition:all 0.15s; }
+        .cal-day:active { transform:scale(0.9); }
+        .cal-day.today { background:#16a34a; color:white; }
+        .cal-day.selected { background:#dcfce7; color:#15803d; outline:2px solid #16a34a; }
+        .cal-day.has-task::after { content:''; position:absolute; bottom:2px; width:4px; height:4px; border-radius:50%; background:#f97316; }
+        .cal-day.today.has-task::after { background:white; }
+        .health-bar { height:6px; border-radius:99px; background:#e2e8f0; overflow:hidden; }
+        .health-fill { height:100%; border-radius:99px; transition:width 0.5s ease; }
+        .spinner { border:3px solid #e2e8f0; border-top:3px solid #16a34a; border-radius:50%; width:28px; height:28px; animation:spin 0.8s linear infinite; margin:auto; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .modal-overlay { position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center; padding:1rem; background:rgba(0,0,0,0.5); backdrop-filter:blur(4px); }
+        .modal-overlay.open { display:flex; animation:fadeIn 0.2s ease-out; }
+    </style>
+</head>
+<body class="text-slate-900 overflow-x-hidden">
+
+<div class="max-w-md mx-auto bg-white min-h-screen shadow-2xl relative border-x border-slate-100">
+
+    <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-50 p-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <button id="backBtn" onclick="navigate('home')" class="hidden p-1 text-green-800">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <h1 id="headerTitle" class="text-xl font-extrabold text-green-900 tracking-tight">GreenThumb</h1>
+        </div>
+        <div class="flex items-center gap-2">
+            <div id="syncIndicator" class="hidden text-[10px] text-slate-400 font-bold animate-pulse">☁️ sync</div>
+            <button onclick="openModal('configModal')" class="p-1 text-slate-400 active:scale-90 transition" title="Impostazioni API Key">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+            <div id="statusLed" class="w-3 h-3 rounded-full bg-slate-200 shadow-inner transition-colors duration-500"></div>
+        </div>
+    </header>
+
+    <!-- HOME -->
+    <section id="home" class="screen active p-4 space-y-5">
+        <div class="bg-green-600 rounded-[32px] p-6 text-white shadow-lg relative overflow-hidden">
+            <div class="relative z-10">
+                <h2 class="text-2xl font-bold italic">La tua Giungla 🌿</h2>
+                <p class="opacity-90 text-sm mt-1" id="plantCount">Caricamento...</p>
+                <p class="opacity-70 text-xs mt-0.5" id="seasonLabel"></p>
+            </div>
+            <svg class="absolute -right-6 -bottom-6 w-32 h-32 opacity-20 rotate-12" fill="currentColor" viewBox="0 0 24 24"><path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,11 17,8 17,8Z"/></svg>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="navigate('add')" class="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+                <div class="p-3 bg-green-100 text-green-600 rounded-2xl"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
+                <span class="font-bold text-slate-700 text-xs uppercase tracking-widest">Aggiungi</span>
+            </button>
+            <button onclick="navigate('database')" class="p-5 bg-white rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+                <div class="p-3 bg-orange-100 text-orange-600 rounded-2xl"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+                <span class="font-bold text-slate-700 text-xs uppercase tracking-widest">Archivio</span>
+            </button>
+        </div>
+        <div>
+            <h3 class="font-bold text-slate-700 text-sm mb-3">📅 Prossime scadenze</h3>
+            <div id="homeUpcoming" class="space-y-2"></div>
+        </div>
+    </section>
+
+    <!-- CALENDARIO -->
+    <section id="calendar" class="screen p-4 space-y-4">
+        <div class="flex items-center justify-between bg-white rounded-2xl px-4 py-3 border border-slate-100 shadow-sm">
+            <button onclick="prevMonth()" class="p-2 text-slate-400 active:scale-90 transition"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m15 18-6-6 6-6"/></svg></button>
+            <span id="calMonthLabel" class="font-extrabold text-slate-800 text-sm tracking-wide"></span>
+            <button onclick="nextMonth()" class="p-2 text-slate-400 active:scale-90 transition"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg></button>
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div class="grid grid-cols-7 text-center text-[10px] font-bold text-slate-400 py-2 border-b border-slate-50">
+                <span>Lu</span><span>Ma</span><span>Me</span><span>Gi</span><span>Ve</span><span>Sa</span><span>Do</span>
+            </div>
+            <div id="calGrid" class="grid grid-cols-7 gap-1 p-2"></div>
+        </div>
+        <div id="dayTasksHeader" class="font-bold text-slate-700 text-sm pt-1 hidden"></div>
+        <div id="calendarList" class="space-y-3"></div>
+    </section>
+
+    <!-- ARCHIVIO -->
+    <section id="database" class="screen p-4 space-y-4">
+        <div id="plantList" class="space-y-4"></div>
+    </section>
+
+    <!-- AGGIUNGI -->
+    <section id="add" class="screen p-4 space-y-4">
+        <div id="debugLog" class="bg-slate-900 text-[9px] text-green-400 p-3 font-mono rounded-xl h-16 overflow-y-auto">
+            > Sistema pronto. Carica una foto.
+        </div>
+        <div class="bg-white rounded-[32px] p-6 shadow-sm border border-slate-100 space-y-5">
+            <div id="uploadBox" class="h-52 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[28px] flex flex-col items-center justify-center relative overflow-hidden">
+                <img id="imgPreview" class="hidden w-full h-full object-cover">
+                <div id="uploadPrompt" class="flex flex-col items-center text-center p-4">
+                    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                    <p class="text-xs text-slate-400 font-bold mt-3 uppercase tracking-wider">Scatta o Scegli Foto</p>
+                </div>
+                <input type="file" id="fileIn" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+            </div>
+            <div id="aiLoader" class="hidden p-3 bg-green-50 rounded-2xl space-y-2">
+                <div class="spinner" style="border-top-color:#16a34a"></div>
+                <p class="text-center text-xs text-green-700 font-bold">Analisi IA stagionale...</p>
+            </div>
+            <div class="space-y-3">
+                <input type="text" id="pName" placeholder="Soprannome (es. Berto)" class="w-full bg-slate-50 rounded-2xl py-4 px-5 text-sm outline-none border border-transparent focus:border-green-500 transition-all">
+                <input type="text" id="pSpec" placeholder="Specie (rilevata dall'IA)" class="w-full bg-slate-100 rounded-2xl py-4 px-5 text-sm outline-none" readonly>
+            </div>
+            <div id="locationInfo" class="hidden bg-blue-50 rounded-2xl px-4 py-3 text-xs text-blue-700 font-semibold"></div>
+            <button onclick="savePlant()" class="w-full bg-green-600 text-white py-4 rounded-2xl font-extrabold shadow-lg active:scale-95 transition">
+                Salva Pianta ☁️
+            </button>
+        </div>
+    </section>
+
+    <!-- DETTAGLIO -->
+    <section id="detail" class="screen">
+        <div id="detailView"></div>
+    </section>
+
+    <!-- Config button in header area -->
+    <nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t flex justify-around p-4 z-50 pb-10 shadow-up">
+        <button onclick="navigate('home')" class="p-2 nav-icon text-green-600" id="nav-home"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
+        <button onclick="navigate('calendar')" class="p-2 nav-icon text-slate-400 relative" id="nav-calendar">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span id="overdueNavBadge" class="hidden absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+        </button>
+        <button onclick="navigate('add')" class="p-4 bg-green-600 text-white rounded-full -mt-10 shadow-xl active:scale-90 transition"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <button onclick="navigate('database')" class="p-2 nav-icon text-slate-400" id="nav-database"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></button>
+    </nav>
+</div>
+
+<!-- MODAL SALUTE -->
+<div id="healthModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">Analisi Salute 🔬</h3>
+            <button onclick="closeModal('healthModal')" class="p-2 text-slate-400"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="h-44 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+            <img id="healthImgPreview" class="hidden w-full h-full object-cover rounded-2xl">
+            <div id="healthUploadPrompt" class="flex flex-col items-center p-4 text-center">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                <p class="text-xs text-slate-400 font-bold mt-2 uppercase tracking-wider">Scatta Foto Attuale</p>
+            </div>
+            <input type="file" id="healthFileIn" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+        </div>
+        <div id="healthLoader" class="hidden py-3 space-y-2"><div class="spinner"></div><p class="text-center text-xs text-slate-400 font-bold">Analisi in corso...</p></div>
+        <div id="healthResult" class="hidden space-y-3">
+            <div>
+                <div class="flex justify-between text-xs font-bold mb-1"><span class="text-slate-500">Stato di salute</span><span id="healthScore" class="text-green-600"></span></div>
+                <div class="health-bar"><div id="healthFill" class="health-fill"></div></div>
+            </div>
+            <div id="healthText" class="bg-slate-50 rounded-2xl p-4 text-sm text-slate-600 leading-relaxed"></div>
+            <div id="healthNeeds" class="space-y-2"></div>
+            <p class="text-[10px] text-slate-400 text-center">Scadenze aggiornate automaticamente ✅</p>
+        </div>
+        <button id="healthAnalyzeBtn" onclick="runHealthAnalysis()" class="hidden w-full bg-green-600 text-white py-3 rounded-2xl font-extrabold text-sm active:scale-95 transition">Analizza 🌿</button>
+    </div>
+</div>
+
+<!-- MODAL DIAGNOSI -->
+<div id="diseaseModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">Diagnosi Problemi 🔍</h3>
+            <button onclick="closeModal('diseaseModal')" class="p-2 text-slate-400"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <p class="text-xs text-slate-500 leading-relaxed">Scatta una foto ravvicinata delle foglie o della zona problematica. L'IA cercherà funghi, parassiti e carenze nutritive.</p>
+        <div class="h-44 bg-red-50 border-2 border-dashed border-red-200 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+            <img id="diseaseImgPreview" class="hidden w-full h-full object-cover rounded-2xl">
+            <div id="diseaseUploadPrompt" class="flex flex-col items-center p-4 text-center">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+                <p class="text-xs text-red-300 font-bold mt-2 uppercase tracking-wider">Foto zona problematica</p>
+            </div>
+            <input type="file" id="diseaseFileIn" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer">
+        </div>
+        <div id="diseaseLoader" class="hidden py-3 space-y-2"><div class="spinner" style="border-top-color:#ef4444"></div><p class="text-center text-xs text-slate-400 font-bold">Diagnosi in corso...</p></div>
+        <div id="diseaseResult" class="hidden space-y-3">
+            <div id="diseaseBanner" class="rounded-2xl p-4"></div>
+            <div id="diseaseSintomi" class="space-y-1"></div>
+            <div id="diseaseTreatment" class="rounded-2xl p-4"></div>
+            <div id="diseasePrevenzione" class="rounded-2xl p-4"></div>
+        </div>
+        <button id="diseaseAnalyzeBtn" onclick="runDiseaseAnalysis()" class="hidden w-full bg-red-500 text-white py-3 rounded-2xl font-extrabold text-sm active:scale-95 transition">Diagnosi 🔍</button>
+    </div>
+</div>
+
+<!-- MODAL DIARIO -->
+<div id="diaryModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">Diario Fotografico 📷</h3>
+            <button onclick="closeModal('diaryModal')" class="p-2 text-slate-400"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div id="diaryContent" class="space-y-4"></div>
+    </div>
+</div>
+
+
+<!-- MODAL FATTO (con data) -->
+<div id="completeModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-5 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">✓ Quando l'hai fatto?</h3>
+            <button onclick="closeModal('completeModal')" class="p-2 text-slate-400">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="completeTaskInfo" class="bg-green-50 rounded-2xl px-4 py-3 text-sm font-bold text-green-800"></div>
+        <div class="space-y-2">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Data in cui l'hai fatto</p>
+            <input type="date" id="completeDateInput"
+                class="w-full bg-slate-50 rounded-2xl py-4 px-5 text-sm outline-none border border-transparent focus:border-green-500 transition-all">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+            <button onclick="setCompleteShortcut(0)" class="py-2 bg-green-100 text-green-700 rounded-xl text-xs font-bold active:scale-95 transition">Oggi</button>
+            <button onclick="setCompleteShortcut(-1)" class="py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold active:scale-95 transition">Ieri</button>
+        </div>
+        <p class="text-[10px] text-slate-400 leading-relaxed text-center">La prossima scadenza verrà calcolata a partire dalla data che inserisci.</p>
+        <button onclick="confirmComplete()" class="w-full bg-green-600 text-white py-3 rounded-2xl font-extrabold text-sm active:scale-95 transition">
+            Conferma
+        </button>
+    </div>
+</div>
+
+<!-- MODAL POSTICIPA -->
+<div id="postponeModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-5 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">📅 Posticipa attività</h3>
+            <button onclick="closeModal('postponeModal')" class="p-2 text-slate-400">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div id="postponeTaskInfo" class="bg-slate-50 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700"></div>
+        <div class="space-y-2">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Nuova data</p>
+            <input type="date" id="postponeDateInput"
+                class="w-full bg-slate-50 rounded-2xl py-4 px-5 text-sm outline-none border border-transparent focus:border-green-500 transition-all">
+        </div>
+        <!-- Quick shortcuts -->
+        <div class="grid grid-cols-3 gap-2">
+            <button onclick="setPostponeShortcut(7)" class="py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold active:scale-95 transition">+7 giorni</button>
+            <button onclick="setPostponeShortcut(14)" class="py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold active:scale-95 transition">+14 giorni</button>
+            <button onclick="setPostponeShortcut(30)" class="py-2 bg-purple-100 text-purple-600 rounded-xl text-xs font-bold active:scale-95 transition">+30 giorni</button>
+        </div>
+        <div id="postponeWarning" class="hidden bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 text-xs text-orange-700 font-semibold leading-relaxed"></div>
+        <button onclick="confirmPostpone()" class="w-full bg-green-600 text-white py-3 rounded-2xl font-extrabold text-sm active:scale-95 transition">
+            Conferma posticipo
+        </button>
+    </div>
+</div>
+
+<!-- MODAL CONFIGURAZIONE API KEY -->
+<div id="configModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-5 shadow-2xl">
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">⚙️ Configurazione</h3>
+            <button onclick="closeModal('configModal')" class="p-2 text-slate-400"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="space-y-2">
+            <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">Gemini API Key</p>
+            <p class="text-xs text-slate-400 leading-relaxed">La chiave viene salvata SOLO su questo dispositivo nel browser. Non appare mai nel codice sorgente.</p>
+            <div class="relative">
+                <input type="password" id="geminiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-50 rounded-2xl py-4 px-5 pr-12 text-sm outline-none border border-transparent focus:border-green-500 transition-all font-mono">
+                <button onclick="toggleKeyVisibility()" class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+            </div>
+            <div id="keyStatus" class="text-xs font-bold px-3 py-2 rounded-xl hidden"></div>
+        </div>
+        <button onclick="saveApiKey()" class="w-full bg-green-600 text-white py-3 rounded-2xl font-extrabold text-sm active:scale-95 transition">
+            Salva chiave 🔐
+        </button>
+        <div class="border-t border-slate-100 pt-4 space-y-1">
+            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Come ottenere la chiave</p>
+            <p class="text-xs text-slate-500">1. Vai su <strong>aistudio.google.com/app/apikey</strong></p>
+            <p class="text-xs text-slate-500">2. Clicca <strong>Create API Key</strong></p>
+            <p class="text-xs text-slate-500">3. Copia e incolla qui sopra</p>
+            <p class="text-xs text-slate-500">4. Non condividere mai la chiave con nessuno</p>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL Notifica -->
+<div id="deadlineModal" class="modal-overlay">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-8 text-center space-y-4 shadow-2xl border border-orange-50">
+        <div class="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center mx-auto text-3xl">🌿</div>
+        <h3 class="text-xl font-extrabold text-slate-800">Hai delle scadenze!</h3>
+        <p id="deadlineMsg" class="text-sm text-slate-500 font-medium leading-relaxed"></p>
+        <div class="pt-2 space-y-3">
+            <button onclick="closeModal('deadlineModal'); navigate('calendar')" class="w-full bg-green-600 text-white py-4 rounded-2xl font-bold shadow-lg active:scale-95 transition">
+                Vai al Calendario
+            </button>
+            <button onclick="closeModal('deadlineModal')" class="w-full text-slate-400 font-bold py-2 text-sm">
+                Ho capito, grazie
+            </button>
+        </div>
+    </div>
+</div>
+
+
+<script>
+// ==========================================
+// CONFIGURAZIONE
+// ==========================================
+const SUPABASE_URL  = "https://etqrvarxeiwvhlcfayac.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cXJ2YXJ4ZWl3dmhsY2ZheWFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MTQxNzEsImV4cCI6MjA5MDM5MDE3MX0.XxSlsD0P2IXZrOehvCozt6KZTkP029JJYOPyOPB6RBk";
+const STORAGE_BUCKET = "greenthumbfile"; // Supabase converte i nomi bucket in lowercase internamente
+// La chiave Gemini viene salvata nel localStorage dal form di configurazione
+function getGeminiKey() { return localStorage.getItem('gt_gemini_key') || ''; }
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const GEMINI_MODELS = [
+    { endpoint:"v1beta", model:"gemini-2.5-flash" },
+    { endpoint:"v1beta", model:"gemini-2.0-flash" },
+    { endpoint:"v1beta", model:"gemini-2.0-flash-lite" },
+];
+
+const CARE_TYPES = {
+    irrigazione: { color:"#3b82f6", icon:"💧", label:"Irrigazione" },
+    potatura:    { color:"#8b5cf6", icon:"✂️",  label:"Potatura"   },
+    concime:     { color:"#f97316", icon:"🌱",  label:"Concime"    },
+    rinvaso:     { color:"#10b981", icon:"🪴",  label:"Rinvaso"    },
+    trattamento: { color:"#ef4444", icon:"🛡️", label:"Trattamento"},
+};
+
+const MONTHS_IT = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+// ==========================================
+// STATO
+// ==========================================
+let plants = [];
+let calYear, calMonth, calSelectedDay;
+let currentPlantId = null;
+let healthBase64 = null, diseaseBase64 = null;
+let userLocation = "Italia centro-nord";
+let deviceId = localStorage.getItem('gt_device_id');
+if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem('gt_device_id', deviceId); }
+
+// ==========================================
+// UTILITY STAGIONI
+// ==========================================
+// Formatta data da YYYY-MM-DD a GG/MM/AAAA
+function fmtDate(isoStr) {
+    if (!isoStr) return '';
+    const [y, m, d] = isoStr.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function getSeason() {
+    const m = new Date().getMonth();
+    if ([2,3,4].includes(m)) return 'primavera';
+    if ([5,6,7].includes(m)) return 'estate';
+    if ([8,9,10].includes(m)) return 'autunno';
+    return 'inverno';
+}
+function getSeasonEmoji() { return {primavera:"🌸",estate:"☀️",autunno:"🍂",inverno:"❄️"}[getSeason()]; }
+function getMeseNome() { return MONTHS_IT[new Date().getMonth()]; }
+
+function log(msg) {
+    const el = document.getElementById('debugLog');
+    if (el) { el.innerHTML += `<br>> ${msg}`; el.scrollTop = el.scrollHeight; }
+}
+function showSync(v) { document.getElementById('syncIndicator').classList.toggle('hidden', !v); }
+
+// ==========================================
+// IMMAGINI
+// ==========================================
+async function resizeImg(file, maxSize = 900, quality = 0.75) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = e => {
+            const img = new Image();
+            img.src = e.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > h) { if (w > maxSize) { h = h * maxSize / w; w = maxSize; } }
+                else { if (h > maxSize) { w = w * maxSize / h; h = maxSize; } }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+        };
+    });
+}
+
+// Versione compressa per storage Supabase: 400px max, qualità 0.4
+// Usata per tutte le immagini salvate nel cloud (sfondo pianta, salute, malattie)
+async function resizeImgForStorage(file) {
+    return resizeImg(file, 400, 0.4);
+}
+
+// Converte base64 già in memoria in versione compressa per storage
+async function compressBase64ForStorage(base64) {
+    return new Promise(resolve => {
+        const img = new Image();
+        img.src = 'data:image/jpeg;base64,' + base64;
+        img.onload = () => {
+            const maxSize = 400, quality = 0.4;
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            if (w > h) { if (w > maxSize) { h = h * maxSize / w; w = maxSize; } }
+            else { if (h > maxSize) { w = w * maxSize / h; h = maxSize; } }
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+        };
+    });
+}
+
+async function uploadImg(base64, folder) {
+    // Comprimi prima di caricare su storage
+    const compressedBase64 = await compressBase64ForStorage(base64);
+    const blob = await (await fetch(`data:image/jpeg;base64,${compressedBase64}`)).blob();
+    const path = `${folder}/${deviceId}_${Date.now()}.jpg`;
+    const { data: uploadData, error } = await sb.storage
+        .from(STORAGE_BUCKET)
+        .upload(path, blob, { contentType:'image/jpeg', upsert: false });
+    if (error) {
+        // Log dettagliato per debug
+        console.error('Supabase storage error:', JSON.stringify(error));
+        throw new Error(`Storage: ${error.message} (status:${error.statusCode||'?'}, bucket:"${STORAGE_BUCKET}")`);
+    }
+    const { data: urlData } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return urlData.publicUrl;
+}
+
+// ==========================================
+// GEMINI
+// ==========================================
+async function callGemini(prompt, base64 = null) {
+    // Errori che NON dipendono dal modello: inutile provare gli altri
+    const FATAL_CODES = [400, 401, 403, 429];
+
+    for (const { endpoint, model } of GEMINI_MODELS) {
+        try {
+            const url = `https://generativelanguage.googleapis.com/${endpoint}/models/${model}:generateContent?key=${getGeminiKey()}`;
+            const parts = [{ text: prompt }];
+            if (base64) parts.push({ inlineData: { mimeType:"image/jpeg", data:base64 } });
+            const res = await fetch(url, {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ contents:[{ parts }] })
+            });
+            const data = await res.json();
+
+            if (res.ok) return data.candidates[0].content.parts[0].text;
+
+            const errMsg = data.error?.message || '';
+            const status = res.status;
+
+            // Errori fatali: interrompi subito il loop, non provare altri modelli
+            if (FATAL_CODES.includes(status)) {
+                if (status === 429) throw new Error("Quota API esaurita. Attendi qualche minuto o riprova domani.");
+                if (status === 403) throw new Error("Chiave API non autorizzata (403). Generane una nuova.");
+                if (status === 401) throw new Error("Chiave API non valida (401). Controlla nelle impostazioni ⚙️.");
+                if (status === 400) throw new Error("Richiesta non valida (400): " + errMsg.substring(0, 80));
+                throw new Error(`Errore ${status}: ${errMsg.substring(0, 80)}`);
+            }
+            // 404 = modello non trovato su questo endpoint, prova il prossimo
+            console.warn(`Modello ${model} non disponibile (${status}), provo il prossimo...`);
+        } catch(err) {
+            // Rilancia se è un errore fatale (già formattato sopra)
+            if (err.message.includes('Quota') || err.message.includes('autorizzata') ||
+                err.message.includes('valida') || err.message.includes('non valida')) {
+                throw err;
+            }
+            // Altrimenti (es. rete) prova il prossimo modello
+        }
+    }
+    throw new Error("Nessun modello Gemini disponibile (404 su tutti). Controlla la connessione.");
+}
+
+function parseJSON(raw) {
+    // Rimuovi markdown code blocks
+    let clean = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    // Trova il primo { e l'ultimo } per estrarre solo il JSON
+    const start = clean.indexOf('{');
+    const end = clean.lastIndexOf('}');
+    if (start === -1 || end === -1) throw new Error('Nessun JSON trovato nella risposta IA');
+    clean = clean.slice(start, end + 1);
+    // Sanifica: rimuovi caratteri di controllo invisibili
+    clean = clean.replace(/[\u0000-\u001F\u007F]/g, ' ');
+    try {
+        return JSON.parse(clean);
+    } catch(e) {
+        // Prova a correggere apostrofi non escaped nelle stringhe
+        // Strategia: usa una regex per trovare valori stringa e fare l'escape
+        const fixed = clean.replace(/:\s*"((?:[^"\\]|\\.)*)"/g, (match, val) => {
+            const escaped = val.replace(/(?<!\\)'/g, "\\'");
+            return `: "${escaped}"`;
+        });
+        return JSON.parse(fixed);
+    }
+}
+
+// ==========================================
+// GEOLOCALIZZAZIONE
+// ==========================================
+function requestLocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(async pos => {
+        try {
+            const { latitude: lat, longitude: lon } = pos.coords;
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const d = await res.json();
+            const city = d.address?.city || d.address?.town || d.address?.village || '';
+            const region = d.address?.state || '';
+            userLocation = [city, region].filter(Boolean).join(', ') || userLocation;
+            const el = document.getElementById('locationInfo');
+            if (el) { el.textContent = `📍 ${userLocation}`; el.classList.remove('hidden'); }
+        } catch(_) {}
+    }, () => {});
+}
+
+//ci sono scadenze nel calendario e attiva il popup
+function checkDeadlines() {
+    const todayStr = new Date().toISOString().split('T')[0]; // Data di oggi in formato YYYY-MM-DD
+    let urgentCount = 0;
+    
+    // Scansiona tutte le piante e i relativi task
+    plants.forEach(p => {
+        const pTasks = p.tasks || [];
+        pTasks.forEach(t => {
+            // Conta i task non fatti e scaduti (o in scadenza oggi)
+            if (!t.done && t.due_date <= todayStr) {
+                urgentCount++;
+            }
+        });
+    });
+
+    if (urgentCount > 0) {
+        // Messaggio per il popup interno
+        const msg = `Hai ${urgentCount} attività in sospeso nel tuo calendario. Non dimenticare di prenderti cura delle tue piante!`;
+        document.getElementById('deadlineMsg').textContent = msg;
+        
+        // 1. Mostra il popup grafico interno
+        openModal('deadlineModal');
+
+        // 2. Opzionale: Notifica Push del Browser (se l'utente ha dato il consenso)
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification("GreenThumb: Scadenze!", {
+                body: `Hai ${urgentCount} compiti da completare oggi.`,
+                icon: 'https://cdn-icons-png.flaticon.com/512/628/628283.png' // Icona a tua scelta
+            });
+        }
+        
+        // 3. Mostra anche un toast veloce come ulteriore segnale
+        if (typeof showToast === "function") {
+            showToast(`📅 ${urgentCount} scadenze rilevate!`, 'warning');
+        }
+    }
+}
+
+// Chiedi il permesso per le notifiche di sistema al primo avvio
+function requestNotificationPermission() {
+    if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+}
+
+// 1. Registra il Service Worker all'avvio
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+}
+
+// 2. Funzione per mandare la notifica al telefono
+async function sendPhoneNotification(titolo, messaggio) {
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted' && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            title: titolo,
+            body: messaggio
+        });
+    }
+}
+
+// 3. Funzione specifica per GreenThumb7: analizza le scadenze
+function checkAndNotifyDeadlines() {
+    const today = new Date().toISOString().split('T')[0];
+    let count = 0;
+
+    // Analizzo l'array plants (che hai già nel codice)
+    plants.forEach(plant => {
+        if (plant.tasks) {
+            plant.tasks.forEach(task => {
+                if (!task.done && task.due_date === today) {
+                    count++;
+                }
+            });
+        }
+    });
+
+    if (count > 0) {
+        sendPhoneNotification(
+            "Promemoria Piante 🌿", 
+            `Hai ${count} scadenze per oggi! Controlla il calendario.`
+        );
+    }
+}
+
+
+
+// ==========================================
+// CARICA PIANTE DA SUPABASE
+// ==========================================
+async function loadPlants() {
+    showSync(true);
+    try {
+        const { data, error } = await sb
+            .from('plants')
+            .select('*, tasks(*), health_logs(*), disease_logs(*)')
+            .eq('device_id', deviceId)
+            .order('created_at', { ascending: false });
+        if (error) throw new Error(`Database error: ${error.message}`);
+        plants = data || [];
+        localStorage.setItem('gt_v4_cache', JSON.stringify(plants));
+    } catch(err) {
+        plants = JSON.parse(localStorage.getItem('gt_v4_cache') || '[]');
+    } finally {
+        showSync(false);
+        updateStats();
+        renderHomeUpcoming();
+    }
+}
+
+// ==========================================
+// NAVIGAZIONE
+// ==========================================
+function navigate(screenId, plantId = null) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(screenId).classList.add('active');
+    document.querySelectorAll('.nav-icon').forEach(i => { i.classList.remove('text-green-600'); i.classList.add('text-slate-400'); });
+    const nav = document.getElementById('nav-' + screenId);
+    if (nav) { nav.classList.remove('text-slate-400'); nav.classList.add('text-green-600'); }
+    document.getElementById('backBtn').style.display = screenId === 'home' ? 'none' : 'block';
+    const titles = { home:'GreenThumb', database:'Archivio', add:'Analisi IA', detail:'Dettaglio', calendar:'Calendario' };
+    document.getElementById('headerTitle').innerText = titles[screenId] || 'GreenThumb';
+    if (screenId === 'database') renderDB();
+    if (screenId === 'calendar') renderCalendar();
+    if (screenId === 'detail' && plantId) { currentPlantId = plantId; renderDetail(plantId); }
+    if (screenId === 'home') renderHomeUpcoming();
+    if (screenId === 'add') requestLocation();
+    updateStats();
+    window.scrollTo(0, 0);
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ==========================================
+// IDENTIFICAZIONE PIANTA
+// ==========================================
+document.getElementById('fileIn').onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    log("Foto ricevuta...");
+    const dataUrl = await resizeImg(file);
+    document.getElementById('imgPreview').src = dataUrl;
+    document.getElementById('imgPreview').classList.remove('hidden');
+    document.getElementById('uploadPrompt').classList.add('hidden');
+    window._addBase64 = dataUrl.split(',')[1];
+    window._addBase64Preview = dataUrl; // fallback completo con prefisso data:
+    await startIdentification(window._addBase64);
+};
+
+async function startIdentification(base64) {
+    if (!getGeminiKey()) {
+        alert("⚠️ Inserisci prima la tua Gemini API Key nelle impostazioni (icona ⚙️ in alto a destra).");
+        openModal('configModal');
+        return;
+    }
+    document.getElementById('aiLoader').classList.remove('hidden');
+    document.getElementById('statusLed').style.backgroundColor = "#fbbf24";
+    const stagione = getSeason(), mese = getMeseNome();
+    log(`Stagione: ${stagione} | Zona: ${userLocation}`);
+
+    const prompt = `Sei un botanico e vivaista professionista con 30 anni di esperienza. Analizza questa foto e identifica la pianta con la massima precisione.
+Contesto: siamo in ${mese} (stagione: ${stagione}), zona geografica: ${userLocation}.
+
+IMPORTANTE: tutte le indicazioni devono essere SPECIFICHE per questa esatta specie, mai generiche.
+Esempi di specificità richiesta:
+- Un bonsai si irriga per immersione del vaso, non con annaffiatoio dall'alto
+- Un cactus in inverno non si irriga quasi per niente
+- Una felce tropicale vuole umidità costante senza mai asciugarsi
+- La potatura di un ulivo segue regole fisiologiche diverse da quella di un agrume
+
+Per irrigazione: descrivi la TECNICA ESATTA specifica per questa specie (immersione, dal basso, nebulizzazione fogliare, gocciolamento lento, ecc.) con la motivazione botanica.
+Per potatura: finestra stagionale precisa basata sul ciclo fisiologico reale di questa specie.
+Per concime: tipo di fertilizzante specifico (NPK bilanciato, acidofile, guano, calcio-magnesio, ecc.).
+
+Rispondi SOLO con JSON valido, senza markdown:
+{
+  "species": "nome scientifico preciso",
+  "name": "nome comune italiano",
+  "desc": "descrizione botanica: habitat naturale originale, caratteristiche fisiologiche distintive, esigenze specifiche",
+  "tasks": {
+    "irrigazione": {
+      "metodo": "tecnica specifica per questa specie: es. immersione del vaso per 10-15 min fino a saturazione, poi sgocciolamento completo prima di rimetterlo in posizione",
+      "primavera": {"giorni": 3, "note": "motivazione legata alla fisiologia stagionale di questa specie"},
+      "estate":    {"giorni": 2, "note": "motivazione"},
+      "autunno":   {"giorni": 5, "note": "motivazione"},
+      "inverno":   {"giorni": 10, "note": "motivazione: ridurre perché in riposo vegetativo o crescita rallentata"}
+    },
+    "concime": {
+      "tipo_consigliato": "tipo fertilizzante specifico per questa specie",
+      "primavera": {"giorni": 14, "note": "fase crescita attiva: tipo e dosaggio"},
+      "estate":    {"giorni": 21, "note": "motivazione"},
+      "autunno":   {"giorni": 30, "note": "riduzione progressiva per preparare al riposo"},
+      "inverno":   {"giorni": null, "note": "sospendere: la pianta in riposo non assorbe nutrienti"}
+    },
+    "rinvaso": {
+      "giorni": 365,
+      "note": "segnali da osservare, periodo ideale per questa specie, tipo di substrato specifico"
+    },
+    "potatura": {
+      "finestra_ideale": "mese inizio-mese fine",
+      "note": "motivazione fisiologica precisa: perché in quel periodo, cosa tagliare esattamente, come trattare i tagli, strumenti da sterilizzare",
+      "giorni_controllo": 30,
+      "note_dimensione": "valuta dalla foto se la pianta sembra giovane/piccola: indica se la potatura strutturale è prematura e cosa fare invece (es. solo pinzatura delle cime, formatura leggera, attesa della maturità)"
+    }
+  },
+  "ambiente": {
+    "temp_min": 5,
+    "temp_max": 30,
+    "luce": "sole diretto pieno / sole del mattino / mezzombra / ombra",
+    "posizione": "interno / esterno / entrambi",
+    "umidita": "bassa / media / alta",
+    "note_ambiente": "esigenze specifiche: teme il gelo, evitare correnti d'aria, ecc."
+  }
+}`;
+
+    try {
+        const json = parseJSON(await callGemini(prompt, base64));
+        document.getElementById('pName').value = json.name || '';
+        document.getElementById('pSpec').value = json.species || '';
+        window._tempInfo = json;
+        document.getElementById('statusLed').style.backgroundColor = "#22c55e";
+        log(`Identificata: ${json.name}`);
+    } catch(err) {
+        document.getElementById('statusLed').style.backgroundColor = "#ef4444";
+        log("Errore: " + err.message);
+        alert(err.message);
+    } finally {
+        document.getElementById('aiLoader').classList.add('hidden');
+    }
+}
+
+// ==========================================
+// SALVA PIANTA
+// ==========================================
+async function savePlant() {
+    const name = document.getElementById('pName').value.trim();
+    const species = document.getElementById('pSpec').value.trim();
+    if (!name || !species || !window._addBase64) return alert("Completa l'analisi prima!");
+
+    document.getElementById('aiLoader').classList.remove('hidden');
+    try {
+        let imgUrl = null;
+        try {
+            imgUrl = await uploadImg(window._addBase64, 'plants');
+        } catch(storageErr) {
+            console.warn('Storage upload failed, saving plant without cloud photo:', storageErr.message);
+            // Fallback: salva la foto come base64 nel DB (meno efficiente ma funziona)
+            imgUrl = null;
+        }
+        const { data: plant, error: pe } = await sb.from('plants').insert({
+            device_id: deviceId, name, species,
+            description: window._tempInfo?.desc || '',
+            img_url: imgUrl || window._addBase64Preview || '',
+            care_info: {
+                    tasks: window._tempInfo?.tasks || {},
+                    ambiente: window._tempInfo?.ambiente || {},
+                    irrigazione: window._tempInfo?.tasks?.irrigazione || {}
+                }
+        }).select().single();
+        if (pe) throw pe;
+
+        const tasks = buildTasks(window._tempInfo, new Date(), plant.id);
+        if (tasks.length) await sb.from('tasks').insert(tasks);
+
+        window._addBase64 = null; window._tempInfo = null;
+        ['pName','pSpec'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('imgPreview').classList.add('hidden');
+        document.getElementById('uploadPrompt').classList.remove('hidden');
+        document.getElementById('debugLog').innerHTML = '> Sistema pronto. Carica una foto.';
+        document.getElementById('fileIn').value = '';
+
+        await loadPlants();
+        navigate('home');
+    } catch(err) {
+        alert("Errore: " + err.message);
+    } finally {
+        document.getElementById('aiLoader').classList.add('hidden');
+    }
+}
+
+function buildTasks(info, fromDate, plantId) {
+    const tasks = [], stagione = getSeason(), care = info?.tasks || {};
+    const addTask = (type, giorni, note, seasonConfig) => {
+        if (!giorni) return;
+        const due = new Date(fromDate);
+        due.setDate(due.getDate() + giorni);
+        tasks.push({ plant_id: plantId, type, note: note || '', interval_days: giorni, season_config: seasonConfig || {}, due_date: due.toISOString().split('T')[0], done: false });
+    };
+
+    if (care.irrigazione) {
+        const cfg = care.irrigazione[stagione] || care.irrigazione.primavera;
+        // Include metodo nella season_config così è disponibile nei task
+        const irrConfig = { ...care.irrigazione, metodo: care.irrigazione.metodo || '' };
+        addTask('irrigazione', cfg?.giorni, care.irrigazione.metodo || cfg?.note || '', irrConfig);
+    }
+    if (care.concime) {
+        const cfg = care.concime[stagione];
+        addTask('concime', cfg?.giorni, cfg?.note, care.concime);
+    }
+    if (care.potatura) {
+        addTask('potatura', care.potatura.giorni_controllo || 30,
+            `Finestra ideale: ${care.potatura.finestra_ideale || '?'} — ${care.potatura.note || ''}`,
+            { finestra_ideale: care.potatura.finestra_ideale, note: care.potatura.note });
+    }
+    if (care.rinvaso?.giorni) addTask('rinvaso', care.rinvaso.giorni, care.rinvaso.note, {});
+    return tasks;
+}
+
+// ==========================================
+// CALENDARIO
+// ==========================================
+function renderCalendar() {
+    const now = new Date();
+    if (!calYear) { calYear = now.getFullYear(); calMonth = now.getMonth(); calSelectedDay = now.getDate(); }
+    drawCalGrid(); renderDayTasks(calSelectedDay);
+}
+function prevMonth() { if (--calMonth < 0) { calMonth = 11; calYear--; } calSelectedDay = 1; drawCalGrid(); renderDayTasks(1); }
+function nextMonth() { if (++calMonth > 11) { calMonth = 0; calYear++; } calSelectedDay = 1; drawCalGrid(); renderDayTasks(1); }
+
+function drawCalGrid() {
+    document.getElementById('calMonthLabel').textContent = `${MONTHS_IT[calMonth]} ${calYear}`;
+    const firstDay = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const offset = firstDay === 0 ? 6 : firstDay - 1;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const taskDays = new Set();
+    plants.forEach(p => (p.tasks||[]).forEach(t => {
+        if (!t.done) { const d = new Date(t.due_date); if (d.getFullYear()===calYear && d.getMonth()===calMonth) taskDays.add(d.getDate()); }
+    }));
+    const grid = document.getElementById('calGrid');
+    grid.innerHTML = '';
+    for (let i = 0; i < offset; i++) grid.innerHTML += `<div></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+        const ds = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const iT = ds === todayStr, iS = d === calSelectedDay && !iT, hT = taskDays.has(d);
+        grid.innerHTML += `<div class="cal-day ${iT?'today':''} ${iS?'selected':''} ${hT?'has-task':''}" onclick="selectDay(${d})">${d}</div>`;
+    }
+}
+
+function selectDay(d) { calSelectedDay = d; drawCalGrid(); renderDayTasks(d); }
+
+function renderDayTasks(d) {
+    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dayTasks = [];
+    plants.forEach(p => (p.tasks||[]).forEach(t => {
+        if (!t.done && t.due_date === dateStr)
+            dayTasks.push({...t, plantName:p.name, plantId:p.id, isOverdue: t.due_date < todayStr});
+    }));
+    // Se è oggi, aggiungi anche tutti i task scaduti nei giorni precedenti
+    if (dateStr === todayStr) {
+        plants.forEach(p => (p.tasks||[]).forEach(t => {
+            if (!t.done && t.due_date < todayStr && !dayTasks.find(x => x.id === t.id))
+                dayTasks.push({...t, plantName:p.name, plantId:p.id, isOverdue: true});
+        }));
+    }
+    const header = document.getElementById('dayTasksHeader');
+    header.classList.remove('hidden');
+    header.textContent = `📋 ${d} ${MONTHS_IT[calMonth]} — ${dayTasks.length ? dayTasks.length+' attività' : 'Nessuna attività'}`;
+    const list = document.getElementById('calendarList');
+    if (!dayTasks.length) { list.innerHTML = `<div class="text-center py-8 text-slate-300 font-bold text-sm">Nessun task 🌿</div>`; return; }
+    list.innerHTML = dayTasks.map(t => {
+        const care = CARE_TYPES[t.type] || {color:'#64748b',icon:'🔧',label:t.type};
+        const overdue = t.isOverdue && !t.done;
+        const potaturaInfo = t.type==='potatura' && t.season_config?.finestra_ideale
+            ? `<p class="text-[10px] text-purple-500 font-bold">✂️ Finestra: ${t.season_config.finestra_ideale}</p>` : '';
+
+        const irrigazioneNote = t.type==='irrigazione' && t.season_config?.metodo
+            ? `<p class="text-[10px] text-blue-400 leading-relaxed mt-0.5">💧 ${t.season_config.metodo}</p>` : '';
+        return `<div class="bg-white rounded-2xl border ${overdue?'border-red-200':'border-slate-100'} p-4 shadow-sm space-y-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl flex items-center justify-center text-xl flex-shrink-0" style="background:${care.color}22">${care.icon}</div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-bold text-slate-800 text-sm">${care.label} — ${t.plantName}</p>
+                    ${t.note && t.type !== 'irrigazione' ? `<p class="text-[10px] text-slate-400 leading-relaxed mt-0.5">${t.note}</p>` : ''}
+                    ${potaturaInfo}
+                    ${irrigazioneNote}
+                    ${overdue ? `<p class="text-[10px] text-red-500 font-bold">⚠️ Scaduto il ${fmtDate(t.due_date)}</p>` : ''}
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="openCompleteModal('${t.plantId}','${t.id}','${t.type}','${t.due_date}')"
+                    class="py-2 bg-green-100 text-green-700 rounded-xl text-xs font-extrabold active:scale-95 transition">
+                    ✓ Fatto
+                </button>
+                <button onclick="openPostponeModal('${t.plantId}','${t.id}','${t.type}','${t.due_date}')"
+                    class="py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-extrabold active:scale-95 transition">
+                    📅 Posticipa
+                </button>
+            </div>
+        </div>`;
+    }).join('') + `<button onclick="scheduleNotification()" class="w-full mt-1 py-3 border-2 border-dashed border-green-300 text-green-600 font-bold text-xs rounded-2xl active:scale-95 transition">🔔 Attiva promemoria per oggi</button>`;
+}
+
+async function completeTaskFromDetail(plantId, taskId) {
+    await completeTask(plantId, taskId);
+    await loadPlants();
+    renderDetail(currentPlantId);
+}
+
+let _completePlantId = null, _completeTaskId = null, _completeTaskType = null;
+
+function openCompleteModal(plantId, taskId, taskType, currentDue) {
+    _completePlantId = plantId;
+    _completeTaskId  = taskId;
+    _completeTaskType = taskType;
+    const care = CARE_TYPES[taskType] || { label: taskType, icon: '🔧' };
+    document.getElementById('completeTaskInfo').textContent = `${care.icon} ${care.label} — scadenza: ${fmtDate(currentDue)}`;
+    // Default: oggi
+    const todayStr = new Date().toISOString().split('T')[0];
+    document.getElementById('completeDateInput').value = todayStr;
+    document.getElementById('completeDateInput').max = todayStr; // non nel futuro
+    openModal('completeModal');
+}
+
+function setCompleteShortcut(daysOffset) {
+    const d = new Date();
+    d.setDate(d.getDate() + daysOffset);
+    document.getElementById('completeDateInput').value = d.toISOString().split('T')[0];
+}
+
+async function confirmComplete() {
+    const doneDate = document.getElementById('completeDateInput').value;
+    if (!doneDate || !_completeTaskId) return;
+
+    const plant = plants.find(p => String(p.id)===String(_completePlantId));
+    if (!plant) return;
+    const task = (plant.tasks||[]).find(t => String(t.id)===String(_completeTaskId));
+    if (!task) return;
+
+    // Calcola ritardo rispetto alla scadenza originale
+    const todayStr = new Date().toISOString().split('T')[0];
+    const daysLate = task.due_date < doneDate
+        ? Math.floor((new Date(doneDate) - new Date(task.due_date)) / 86400000)
+        : 0;
+
+    await sb.from('tasks').update({ done: true }).eq('id', _completeTaskId);
+
+    // Cadenza stagionale
+    const stagione = getSeason();
+    let days = task.interval_days || 7;
+    if ((task.type==='irrigazione'||task.type==='concime') && task.season_config?.[stagione]?.giorni) {
+        days = task.season_config[stagione].giorni;
+    }
+
+    // Prossima scadenza calcolata dalla data in cui è stato fatto (non da oggi)
+    const next = new Date(doneDate + 'T12:00:00');
+    next.setDate(next.getDate() + days);
+    await sb.from('tasks').insert({
+        plant_id: _completePlantId, type: task.type, note: task.note,
+        interval_days: days, season_config: task.season_config||{},
+        due_date: next.toISOString().split('T')[0], done: false
+    });
+
+    closeModal('completeModal');
+    await loadPlants();
+    renderDayTasks(calSelectedDay);
+    drawCalGrid();
+    renderHomeUpcoming();
+
+    const care = CARE_TYPES[task.type]||{label:task.type};
+    if (daysLate > 0) {
+        showToast(`${care.label} completata con ${daysLate} giorn${daysLate===1?'o':'i'} di ritardo.${daysLate>=3?' 🔍 Considera un controllo salute.':''}`, daysLate>=3?'warning':'info');
+    } else if (doneDate < todayStr) {
+        const daysEarly = Math.floor((new Date(todayStr) - new Date(doneDate)) / 86400000);
+        showToast(`${care.label} segnata come fatta ${daysEarly} giorn${daysEarly===1?'o':'i'} fa. Prossima scadenza ricalcolata ✅`, 'success');
+    } else {
+        showToast(`${care.label} completata! Prossima scadenza: ${fmtDate(next.toISOString().split('T')[0])} ✅`, 'success');
+    }
+}
+
+// Soglie di avviso per posticipo (giorni oltre la data originale)
+const POSTPONE_WARNINGS = {
+    irrigazione: { days: 14, msg: "⚠️ Stai posticipando l'irrigazione di molto. Rischio stress idrico o danni alle radici per molte specie." },
+    concime:     { days: 45, msg: "⚠️ Posticipo concimazione molto lungo. In stagione di crescita attiva la pianta potrebbe soffrire di carenze nutritive." },
+    potatura:    { days: 180, msg: "⚠️ Posticipo potatura molto lungo. Assicurati che sia compatibile con il ciclo vegetativo della specie." },
+    rinvaso:     { days: 365, msg: "⚠️ Stai posticipando il rinvaso di oltre un anno dalla data prevista. Controlla se le radici sono già compresse." },
+    trattamento: { days: 21, msg: "⚠️ Il trattamento è urgente. Posticipare troppo rischia di aggravare il problema." },
+};
+
+let _postponePlantId = null, _postponeTaskId = null, _postponeTaskType = null;
+
+function openPostponeModal(plantId, taskId, taskType, currentDue) {
+    _postponePlantId = plantId;
+    _postponeTaskId = taskId;
+    _postponeTaskType = taskType;
+
+    const care = CARE_TYPES[taskType] || { label: taskType, icon: '🔧' };
+    document.getElementById('postponeTaskInfo').textContent = `${care.icon} ${care.label} — scadenza attuale: ${fmtDate(currentDue)}`;
+
+    // Default: +7 giorni dalla data attuale o da oggi se scaduta
+    const todayStr = new Date().toISOString().split('T')[0];
+    const base = currentDue < todayStr ? todayStr : currentDue;
+    const def = new Date(base + 'T12:00:00');
+    def.setDate(def.getDate() + 7);
+    document.getElementById('postponeDateInput').value = def.toISOString().split('T')[0];
+    document.getElementById('postponeDateInput').min = todayStr; // non può andare nel passato
+    document.getElementById('postponeWarning').classList.add('hidden');
+    document.getElementById('postponeWarning').textContent = '';
+
+    // Listen for changes to show warning
+    document.getElementById('postponeDateInput').oninput = checkPostponeWarning;
+    checkPostponeWarning();
+
+    openModal('postponeModal');
+}
+
+function setPostponeShortcut(days) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const base = new Date(todayStr + 'T12:00:00');
+    base.setDate(base.getDate() + days);
+    document.getElementById('postponeDateInput').value = base.toISOString().split('T')[0];
+    checkPostponeWarning();
+}
+
+function checkPostponeWarning() {
+    const newDate = document.getElementById('postponeDateInput').value;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const warnEl = document.getElementById('postponeWarning');
+    if (!newDate || !_postponeTaskType) return;
+
+    const daysFromToday = Math.ceil((new Date(newDate) - new Date(todayStr)) / 86400000);
+    const threshold = POSTPONE_WARNINGS[_postponeTaskType];
+
+    if (threshold && daysFromToday > threshold.days) {
+        warnEl.textContent = threshold.msg;
+        warnEl.classList.remove('hidden');
+    } else {
+        warnEl.classList.add('hidden');
+    }
+}
+
+async function confirmPostpone() {
+    const newDue = document.getElementById('postponeDateInput').value;
+    if (!newDue || !_postponeTaskId) return;
+
+    await sb.from('tasks').update({ due_date: newDue }).eq('id', _postponeTaskId);
+    closeModal('postponeModal');
+    await loadPlants();
+    renderDetail(currentPlantId);
+    drawCalGrid();
+    renderHomeUpcoming();
+    const care = CARE_TYPES[_postponeTaskType] || { label: _postponeTaskType };
+    showToast(`${CARE_TYPES[_postponeTaskType]?.label||_postponeTaskType} posticipata al ${fmtDate(newDue)}`, 'info');
+}
+
+async function postponeTask(plantId, taskId, daysToAdd) {
+    // Kept for calendar quick-postpone (7 days from today)
+    const plant = plants.find(p => String(p.id)===String(plantId));
+    if (!plant) return;
+    const task = (plant.tasks||[]).find(t => String(t.id)===String(taskId));
+    if (!task) return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const base = task.due_date < todayStr ? new Date() : new Date(task.due_date + 'T12:00:00');
+    base.setDate(base.getDate() + daysToAdd);
+    const newDue = base.toISOString().split('T')[0];
+    await sb.from('tasks').update({ due_date: newDue }).eq('id', taskId);
+    await loadPlants();
+    if (currentPlantId) renderDetail(currentPlantId);
+    drawCalGrid();
+    renderHomeUpcoming();
+    showToast(`${CARE_TYPES[task.type]?.label||task.type} posticipata al ${fmtDate(newDue)}`, 'info');
+}
+
+async function completeTask(plantId, taskId) {
+    const plant = plants.find(p => String(p.id)===String(plantId));
+    if (!plant) return;
+    const task = (plant.tasks||[]).find(t => String(t.id)===String(taskId));
+    if (!task) return;
+
+    // Calcola ritardo
+    const todayStr = new Date().toISOString().split('T')[0];
+    const daysLate = task.due_date < todayStr
+        ? Math.floor((new Date(todayStr) - new Date(task.due_date)) / 86400000)
+        : 0;
+
+    await sb.from('tasks').update({ done: true }).eq('id', taskId);
+
+    // Cadenza stagionale corretta
+    const stagione = getSeason();
+    let days = task.interval_days || 7;
+    if ((task.type==='irrigazione'||task.type==='concime') && task.season_config?.[stagione]?.giorni) {
+        days = task.season_config[stagione].giorni;
+    }
+
+    // Prossima scadenza calcolata da OGGI (approccio "data effettiva")
+    // Se hai fatto la cosa in ritardo, la pianta ha ricevuto la cura oggi,
+    // quindi il prossimo intervento parte da oggi.
+    const next = new Date();
+    next.setDate(next.getDate() + days);
+    await sb.from('tasks').insert({
+        plant_id: plantId, type: task.type, note: task.note,
+        interval_days: days, season_config: task.season_config||{},
+        due_date: next.toISOString().split('T')[0], done: false
+    });
+
+    await loadPlants();
+    renderDayTasks(calSelectedDay);
+    drawCalGrid();
+    renderHomeUpcoming();
+
+    // Avviso se completato in ritardo
+    if (daysLate > 0) {
+        const care = CARE_TYPES[task.type]||{label:task.type};
+        const msg = daysLate === 1
+            ? `${care.label} completata con 1 giorno di ritardo.`
+            : `${care.label} completata con ${daysLate} giorni di ritardo.`;
+        // Toast non bloccante invece di alert
+        showToast(msg + (daysLate >= 3 ? ' 🔍 Considera un controllo salute della pianta.' : ''), daysLate >= 3 ? 'warning' : 'info');
+    }
+}
+
+function showToast(msg, type = 'info') {
+    const colors = { info: 'bg-blue-600', warning: 'bg-orange-500', error: 'bg-red-600', success: 'bg-green-600' };
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-28 left-4 right-4 max-w-md mx-auto ${colors[type]||colors.info} text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-xl z-[200] transition-all`;
+    toast.style.animation = 'fadeIn 0.3s ease-out';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3500);
+}
+
+function scheduleNotification() {
+    if (!("Notification" in window)) return alert("Notifiche non supportate.");
+    Notification.requestPermission().then(p => {
+        if (p==="granted") { new Notification("🌿 GreenThumb",{body:"Hai piante da curare oggi!"}); alert("✅ Promemoria attivato!"); }
+        else alert("Permesso notifiche negato.");
+    });
+}
+
+// ==========================================
+// HOME UPCOMING
+// ==========================================
+function navigateToTaskDate(dueDateStr) {
+    // Parse the date string and set calendar to that month/day
+    const d = new Date(dueDateStr);
+    calYear = d.getFullYear();
+    calMonth = d.getMonth();
+    calSelectedDay = d.getDate();
+    navigate('calendar');
+}
+
+function renderHomeUpcoming() {
+    const el = document.getElementById('homeUpcoming');
+    const today = new Date();
+    const upcoming = [];
+    plants.forEach(p => (p.tasks||[]).filter(t=>!t.done).forEach(t => {
+        const diff = Math.ceil((new Date(t.due_date) - today) / 86400000);
+        if (diff <= 7) upcoming.push({...t, plantName:p.name, diff});
+    }));
+    upcoming.sort((a,b)=>a.diff-b.diff);
+    const top = upcoming.slice(0,5);
+    if (!top.length) { el.innerHTML=`<div class="text-center py-4 text-slate-300 text-sm font-bold">Nessuna scadenza nei prossimi 7 giorni 🎉</div>`; return; }
+    // Update nav badge
+    const overdueCount = upcoming.filter(t => t.diff < 0).length;
+    const badge = document.getElementById('overdueNavBadge');
+    if (badge) badge.classList.toggle('hidden', overdueCount === 0);
+
+    el.innerHTML = top.map(t => {
+        const care = CARE_TYPES[t.type] || {icon:'🔧'};
+        const isOverdue = t.diff < 0;
+        const isToday = t.diff === 0;
+        const label = isOverdue
+            ? `<span class="text-red-500 font-extrabold">Scaduto</span>`
+            : isToday ? `<span class="text-orange-500 font-bold">Oggi</span>`
+            : `<span class="text-slate-400">+${t.diff}g</span>`;
+        const dot = isOverdue ? `<span class="w-2 h-2 rounded-full bg-red-500 flex-shrink-0"></span>` : '';
+        return `<div onclick="navigateToTaskDate('${t.due_date}')" class="bg-white rounded-2xl border ${isOverdue?'border-red-200 bg-red-50':'border-slate-100'} px-4 py-3 flex items-center gap-3 shadow-sm active:scale-95 transition cursor-pointer">
+            ${dot}
+            <span class="text-lg">${care.icon}</span>
+            <div class="flex-1"><p class="text-xs font-bold ${isOverdue?'text-red-700':'text-slate-700'}">${CARE_TYPES[t.type]?.label||t.type} · ${t.plantName}</p></div>
+            <div class="flex items-center gap-1 text-xs font-bold">${label}<svg class="text-slate-300 ml-1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 18 6-6-6-6"/></svg></div>
+        </div>`;
+    }).join('');
+}
+
+// ==========================================
+// ARCHIVIO
+// ==========================================
+function renderDB() {
+    const list = document.getElementById('plantList');
+    if (!plants.length) { list.innerHTML="<div class='text-center py-20 text-slate-300 font-bold'>Archivio vuoto.</div>"; return; }
+    list.innerHTML = plants.map(p => {
+        const urgent = (p.tasks||[]).filter(t=>!t.done && new Date(t.due_date)<=new Date()).length;
+        return `<div onclick="navigate('detail','${p.id}')" class="bg-white p-3 rounded-3xl border border-slate-50 flex items-center gap-4 shadow-sm active:scale-95 transition">
+            <img src="${p.img_url}" class="w-16 h-16 rounded-2xl object-cover">
+            <div class="flex-1">
+                <h4 class="font-bold text-slate-800 text-sm">${p.name}</h4>
+                <p class="text-[10px] text-slate-400 italic">${p.species}</p>
+                ${urgent ? `<p class="text-[10px] text-red-500 font-bold mt-0.5">⚠️ ${urgent} scadut${urgent===1?'o':'i'}</p>` : ''}
+            </div>
+            <svg class="text-slate-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        </div>`;
+    }).join('');
+}
+
+// ==========================================
+// DETTAGLIO
+// ==========================================
+function renderDetail(id) {
+    const p = plants.find(x => String(x.id)===String(id));
+    if (!p) return;
+    const today = new Date();
+    const upcoming = (p.tasks||[]).filter(t=>!t.done).sort((a,b)=>new Date(a.due_date)-new Date(b.due_date));
+    const lastHealth = (p.health_logs||[]).sort((a,b)=>new Date(b.checked_at)-new Date(a.checked_at))[0];
+    const lastDisease = (p.disease_logs||[]).sort((a,b)=>new Date(b.checked_at)-new Date(a.checked_at))[0];
+    const potaturaTask = upcoming.find(t=>t.type==='potatura');
+    const irrigazioneTask = upcoming.find(t=>t.type==='irrigazione');
+    const metodoIrr = p.care_info?.irrigazione?.metodo || p.care_info?.tasks?.irrigazione?.metodo || irrigazioneTask?.note || null;
+    const amb = p.care_info?.ambiente || {};
+
+    const potaturaInfo = potaturaTask?.season_config?.finestra_ideale ? `
+        <div class="bg-purple-50 rounded-2xl px-4 py-3 text-xs text-purple-700 font-semibold">
+            ✂️ Finestra ideale potatura: <strong>${potaturaTask.season_config.finestra_ideale}</strong>
+            ${potaturaTask.season_config.note ? `<p class="mt-1 font-normal opacity-80">${potaturaTask.season_config.note}</p>` : ''}
+            ${potaturaTask.season_config.note_dimensione ? `<p class="mt-1 font-normal bg-purple-100 rounded-xl px-2 py-1 opacity-90">🌱 ${potaturaTask.season_config.note_dimensione}</p>` : ''}
+        </div>` : '';
+
+    // Ambiente badges
+    const luceIcon = { 'sole diretto pieno':'☀️', 'sole del mattino':'🌤️', 'mezzombra':'⛅', 'mezz-ombra':'⛅', 'ombra':'🌑' }[amb.luce?.replace("'",'')] || '💡';
+    const posizioneIcon = { 'interno':'🏠', 'esterno':'🌳', 'entrambi':'🏠🌳' }[amb.posizione] || '📍';
+    const ambienteSection = amb.temp_min !== undefined ? `
+        <div class="bg-white rounded-3xl p-4 shadow-sm">
+            <h4 class="font-extrabold text-slate-800 text-sm mb-3">🌡️ Condizioni ideali</h4>
+            <div class="grid grid-cols-2 gap-2">
+                <div class="bg-slate-50 rounded-2xl p-3 flex items-center gap-2">
+                    <span class="text-lg">🌡️</span>
+                    <div><p class="text-[10px] text-slate-400 font-bold uppercase">Temperatura</p><p class="text-xs font-bold text-slate-700">${amb.temp_min}° / ${amb.temp_max}°C</p></div>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-3 flex items-center gap-2">
+                    <span class="text-lg">${luceIcon}</span>
+                    <div><p class="text-[10px] text-slate-400 font-bold uppercase">Luce</p><p class="text-xs font-bold text-slate-700">${amb.luce||'–'}</p></div>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-3 flex items-center gap-2">
+                    <span class="text-lg">${posizioneIcon}</span>
+                    <div><p class="text-[10px] text-slate-400 font-bold uppercase">Posizione</p><p class="text-xs font-bold text-slate-700">${amb.posizione||'–'}</p></div>
+                </div>
+                <div class="bg-slate-50 rounded-2xl p-3 flex items-center gap-2">
+                    <span class="text-lg">💧</span>
+                    <div><p class="text-[10px] text-slate-400 font-bold uppercase">Umidità</p><p class="text-xs font-bold text-slate-700">${amb.umidita||'–'}</p></div>
+                </div>
+            </div>
+            ${amb.note_ambiente ? `<p class="text-xs text-slate-500 mt-2 leading-relaxed">ℹ️ ${amb.note_ambiente}</p>` : ''}
+        </div>` : '';
+
+    const irrigazioneInfo = metodoIrr ? `
+        <div class="bg-blue-50 rounded-2xl px-4 py-3 text-xs text-blue-700 font-semibold">
+            💧 Metodo irrigazione: <p class="mt-1 font-normal">${metodoIrr}</p>
+        </div>` : '';
+
+    const healthSection = lastHealth ? `
+        <div class="bg-white rounded-3xl p-5 shadow-sm space-y-2">
+            <div class="flex items-center justify-between">
+                <h4 class="font-extrabold text-slate-800 text-sm">Ultimo controllo salute</h4>
+                <span class="text-[10px] text-slate-400">${new Date(lastHealth.checked_at).toLocaleDateString('it-IT')}</span>
+            </div>
+            <div class="health-bar"><div class="health-fill" style="width:${lastHealth.score}%;background:${lastHealth.score>=70?'#22c55e':lastHealth.score>=40?'#f97316':'#ef4444'}"></div></div>
+            <p class="text-xs font-bold" style="color:${lastHealth.score>=70?'#16a34a':lastHealth.score>=40?'#ea580c':'#dc2626'}">${lastHealth.score}%</p>
+            <p class="text-sm text-slate-600 leading-relaxed">${lastHealth.report}</p>
+        </div>` : '';
+
+    const diseaseSection = lastDisease && lastDisease.problema !== 'nessuno' ? `
+        <div class="bg-red-50 rounded-3xl p-5 shadow-sm space-y-1">
+            <div class="flex items-center justify-between">
+                <h4 class="font-extrabold text-red-700 text-sm">⚠️ Ultima diagnosi</h4>
+                <span class="text-[10px] text-slate-400">${new Date(lastDisease.checked_at).toLocaleDateString('it-IT')}</span>
+            </div>
+            <p class="font-bold text-red-600 text-sm">${lastDisease.problema} — Gravità ${lastDisease.gravita}/5</p>
+            <p class="text-xs text-red-700">${lastDisease.trattamento||''}</p>
+        </div>` : '';
+
+    const tasksHtml = !upcoming.length ? `<div class="text-center py-4 text-slate-300 text-sm">Nessuna scadenza attiva</div>` :
+        upcoming.map((t,i) => {
+            const care = CARE_TYPES[t.type]||{icon:'🔧',label:t.type};
+            const diff = Math.ceil((new Date(t.due_date)-today)/86400000);
+            const isOverdue = diff < 0;
+            const isFuture = diff > 0;
+            const dl = isOverdue
+                ? `<span class="text-red-500 font-bold text-[10px]">Scaduto ${Math.abs(diff)}g fa (${fmtDate(t.due_date)})</span>`
+                : diff===0 ? `<span class="text-orange-500 font-bold text-[10px]">Oggi</span>`
+                : `<span class="text-slate-400 text-[10px]">tra ${diff}g</span>`;
+            return `<div class="py-3 border-b border-slate-50 last:border-0">
+                <div class="flex items-start gap-3">
+                    <span class="text-xl mt-0.5">${care.icon}</span>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-sm font-bold text-slate-700">${care.label}</p>
+                            ${dl}
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5">${fmtDate(t.due_date)}</p>
+                        ${t.type === 'irrigazione' && t.season_config?.metodo
+                            ? `<p class="text-xs text-blue-600 mt-1 leading-relaxed">💧 ${t.season_config.metodo}</p>`
+                            : t.note ? `<p class="text-xs text-slate-600 mt-1 leading-relaxed">${t.note}</p>` : ''}
+
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+    document.getElementById('detailView').innerHTML = `
+        <div class="h-72 relative">
+            <img src="${p.img_url}" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+            <div class="absolute bottom-6 left-6 text-white">
+                <h2 class="text-3xl font-bold">${p.name}</h2>
+                <p class="opacity-80 italic text-sm">${p.species}</p>
+            </div>
+        </div>
+        <div class="p-5 -mt-10 bg-slate-50 rounded-t-[40px] relative z-10 space-y-4 pb-32">
+            <div class="bg-white rounded-3xl p-5 shadow-sm"><p class="text-sm text-slate-600 leading-relaxed">${p.description||''}</p></div>
+            ${ambienteSection}
+            ${irrigazioneInfo}
+            ${potaturaInfo}
+            <div class="grid grid-cols-3 gap-3">
+                <button onclick="openHealthModal()" class="bg-green-500 text-white py-3 rounded-2xl font-bold text-xs active:scale-95 transition flex flex-col items-center gap-1"><span class="text-xl">🔬</span>Salute</button>
+                <button onclick="openDiseaseModal()" class="bg-red-400 text-white py-3 rounded-2xl font-bold text-xs active:scale-95 transition flex flex-col items-center gap-1"><span class="text-xl">🔍</span>Diagnosi</button>
+                <button onclick="openDiaryModal('${p.id}')" class="bg-blue-500 text-white py-3 rounded-2xl font-bold text-xs active:scale-95 transition flex flex-col items-center gap-1"><span class="text-xl">📷</span>Diario</button>
+            </div>
+            ${healthSection}
+            ${diseaseSection}
+            <div class="bg-white rounded-3xl p-5 shadow-sm">
+                <h4 class="font-extrabold text-slate-800 mb-3 text-sm">📅 Prossime cure</h4>
+                ${tasksHtml}
+            </div>
+            <button onclick="deleteP('${p.id}')" class="w-full py-4 text-red-400 font-bold text-xs uppercase tracking-widest">Elimina Pianta</button>
+        </div>`;
+}
+
+// ==========================================
+// MODAL SALUTE
+// ==========================================
+function openHealthModal() {
+    healthBase64 = null;
+    document.getElementById('healthImgPreview').classList.add('hidden');
+    document.getElementById('healthUploadPrompt').classList.remove('hidden');
+    document.getElementById('healthResult').classList.add('hidden');
+    document.getElementById('healthLoader').classList.add('hidden');
+    document.getElementById('healthAnalyzeBtn').classList.add('hidden');
+    document.getElementById('healthFileIn').value = '';
+    openModal('healthModal');
+}
+
+document.getElementById('healthFileIn').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const dataUrl = await resizeImg(file);
+    healthBase64 = dataUrl.split(',')[1];
+    document.getElementById('healthImgPreview').src = dataUrl;
+    document.getElementById('healthImgPreview').classList.remove('hidden');
+    document.getElementById('healthUploadPrompt').classList.add('hidden');
+    document.getElementById('healthAnalyzeBtn').classList.remove('hidden');
+};
+
+async function runHealthAnalysis() {
+    if (!healthBase64 || !currentPlantId) return;
+    const plant = plants.find(p=>String(p.id)===String(currentPlantId));
+    if (!plant) return;
+    document.getElementById('healthLoader').classList.remove('hidden');
+    document.getElementById('healthAnalyzeBtn').classList.add('hidden');
+    document.getElementById('healthResult').classList.add('hidden');
+
+    const stagione = getSeason();
+    const prompt = `Sei un botanico e fitoiatra professionista. Stai analizzando una ${plant.species} (nome: ${plant.name}).
+Stagione: ${stagione}, zona: ${userLocation}.
+
+Analizza questa foto con competenza specialistica per questa specie:
+- Osserva il colore e la turgidità delle foglie (ingiallimento, maculature, necrosi, avvizzimento)
+- Valuta lo stato generale del fusto e del portamento
+- Cerca segnali di stress idrico (sovra o sotto irrigazione specifica per questa specie)
+- Valuta se le condizioni di luce sembrano adeguate per questa specie
+- Considera il periodo stagionale e le esigenze fisiologiche di ${plant.species} in questa stagione
+
+Le correzioni agli intervalli di cura devono essere specifiche per ${plant.species}, non generiche.
+Per esempio: se è un bonsai disidratato, non aumentare semplicemente i giorni ma considera l'immersione d'emergenza.
+
+Rispondi SOLO JSON valido:
+{
+  "score": 75,
+  "report": "analisi dettagliata e specifica per ${plant.species}: cosa vedi esattamente, come sta la pianta, perché",
+  "needs": ["intervento specifico 1 con tecnica dettagliata", "intervento specifico 2"],
+  "updateTasks": {"irrigazione":{"giorni":2},"concime":{"giorni":10}}
+}
+score: 0=moribonda, 40=in difficoltà, 70=discreta, 90=ottima, 100=perfetta.`;
+
+    try {
+        const json = parseJSON(await callGemini(prompt, healthBase64));
+        let imgUrl = null;
+        try { imgUrl = await uploadImg(healthBase64, 'health'); } catch(_) {}
+        await sb.from('health_logs').insert({ plant_id:currentPlantId, img_url:imgUrl, score:json.score, report:json.report, needs:json.needs||[] });
+
+        if (json.updateTasks) {
+            for (const [type, data] of Object.entries(json.updateTasks)) {
+                await sb.from('tasks').update({done:true}).eq('plant_id',currentPlantId).eq('type',type).eq('done',false);
+                const next = new Date(); next.setDate(next.getDate()+data.giorni);
+                const ex = (plant.tasks||[]).find(t=>t.type===type);
+                await sb.from('tasks').insert({ plant_id:currentPlantId, type, note:ex?.note||'', interval_days:data.giorni, season_config:ex?.season_config||{}, due_date:next.toISOString().split('T')[0], done:false });
+            }
+        }
+
+        document.getElementById('healthScore').textContent = json.score + '%';
+        document.getElementById('healthFill').style.cssText = `width:${json.score}%;background:${json.score>=70?'#22c55e':json.score>=40?'#f97316':'#ef4444'}`;
+        document.getElementById('healthText').textContent = json.report;
+        document.getElementById('healthNeeds').innerHTML = (json.needs||[]).map(n =>
+            `<div class="flex gap-2 bg-orange-50 rounded-xl p-3"><span class="text-orange-400 text-xs mt-0.5">●</span><p class="text-xs text-orange-700 font-semibold">${n}</p></div>`
+        ).join('');
+        document.getElementById('healthResult').classList.remove('hidden');
+        await loadPlants(); renderDetail(currentPlantId);
+    } catch(err) { alert("Analisi fallita: " + err.message); }
+    finally { document.getElementById('healthLoader').classList.add('hidden'); }
+}
+
+// ==========================================
+// MODAL DIAGNOSI
+// ==========================================
+function openDiseaseModal() {
+    diseaseBase64 = null;
+    document.getElementById('diseaseImgPreview').classList.add('hidden');
+    document.getElementById('diseaseUploadPrompt').classList.remove('hidden');
+    document.getElementById('diseaseResult').classList.add('hidden');
+    document.getElementById('diseaseLoader').classList.add('hidden');
+    document.getElementById('diseaseAnalyzeBtn').classList.add('hidden');
+    document.getElementById('diseaseFileIn').value = '';
+    openModal('diseaseModal');
+}
+
+document.getElementById('diseaseFileIn').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const dataUrl = await resizeImg(file);
+    diseaseBase64 = dataUrl.split(',')[1];
+    document.getElementById('diseaseImgPreview').src = dataUrl;
+    document.getElementById('diseaseImgPreview').classList.remove('hidden');
+    document.getElementById('diseaseUploadPrompt').classList.add('hidden');
+    document.getElementById('diseaseAnalyzeBtn').classList.remove('hidden');
+};
+
+async function runDiseaseAnalysis() {
+    if (!diseaseBase64 || !currentPlantId) return;
+    const plant = plants.find(p=>String(p.id)===String(currentPlantId));
+    if (!plant) return;
+    document.getElementById('diseaseLoader').classList.remove('hidden');
+    document.getElementById('diseaseAnalyzeBtn').classList.add('hidden');
+    document.getElementById('diseaseResult').classList.add('hidden');
+
+    const prompt = `Sei un fitoiatra e entomologo botanico professionista. Analizza questa foto di ${plant.species} (${plant.name}) cercando patologie e parassiti.
+
+Considera la suscettibilità specifica di ${plant.species} a:
+- Funghi comuni per questa specie (oidio, botrytis, ruggine, peronospora, fusarium, phytophthora)
+- Parassiti tipici (cocciniglia farinosa/scudiforme, afidi, ragnetto rosso, tripidi, mosca bianca, oziorrinco)
+- Carenze nutritive frequenti in questa specie (azoto=foglie gialle uniformi, ferro=clorosi internervale, magnesio=ingiallimento tra le nervature)
+- Problemi idrici specifici per ${plant.species} (marciume radicale, stress da siccità, edema)
+
+Il trattamento deve essere SPECIFICO per ${plant.species}: considera sensibilità a certi prodotti, metodo di applicazione corretto, dosi.
+
+Rispondi SOLO JSON valido:
+{
+  "problema": "nome preciso e completo del problema identificato, o 'nessuno'",
+  "gravita": 3,
+  "sintomi": ["sintomo visivo preciso 1", "sintomo visivo preciso 2", "sintomo visivo preciso 3"],
+  "trattamento": "protocollo di trattamento step-by-step specifico per ${plant.species}: cosa fare subito, come applicare, per quante volte",
+  "prodotto": "prodotto specifico con formulazione (es: olio di neem 0.5% in acqua tiepida con sapone di Marsiglia, fungicida rameico Bordeaux 1%, insetticida a base di spinosad...)",
+  "prevenzione": "misure preventive specifiche per questa specie e questo tipo di problema",
+  "aggiornaTasks": {"trattamento":{"giorni":7}}
+}
+gravita: 1=lieve, 2=moderata, 3=seria, 4=grave, 5=critica urgente.`;
+
+    try {
+        const json = parseJSON(await callGemini(prompt, diseaseBase64));
+        let imgUrl = null;
+        try { imgUrl = await uploadImg(diseaseBase64, 'disease'); } catch(_) {}
+        await sb.from('disease_logs').insert({ plant_id:currentPlantId, img_url:imgUrl, problema:json.problema, gravita:json.gravita, sintomi:json.sintomi||[], trattamento:json.trattamento, prodotto:json.prodotto, prevenzione:json.prevenzione });
+
+        if (json.aggiornaTasks?.trattamento && json.problema!=='nessuno') {
+            await sb.from('tasks').update({done:true}).eq('plant_id',currentPlantId).eq('type','trattamento').eq('done',false);
+            const next = new Date(); next.setDate(next.getDate()+json.aggiornaTasks.trattamento.giorni);
+            await sb.from('tasks').insert({ plant_id:currentPlantId, type:'trattamento', note:`${json.problema}: ${json.prodotto||''}`, interval_days:json.aggiornaTasks.trattamento.giorni, season_config:{}, due_date:next.toISOString().split('T')[0], done:false });
+        }
+
+        const nessuno = json.problema==='nessuno';
+        const gravColors = ['','#22c55e','#84cc16','#f97316','#ef4444','#7f1d1d'];
+        const gravLabels = ['','Lieve 😌','Moderata 😐','Seria 😟','Grave 😱','Critica 🚨'];
+
+        document.getElementById('diseaseBanner').innerHTML = nessuno
+            ? `<div class="text-center py-2"><span class="text-4xl">✅</span><p class="font-extrabold text-green-600 mt-2 text-sm">Nessun problema rilevato!</p></div>`
+            : `<div class="flex items-center gap-3 bg-red-50 rounded-2xl p-3"><span class="text-3xl">🦠</span><div><p class="font-extrabold text-slate-800 text-sm">${json.problema}</p><p class="text-xs font-bold" style="color:${gravColors[json.gravita]}">${gravLabels[json.gravita]||''}</p></div></div>`;
+
+        document.getElementById('diseaseSintomi').innerHTML = nessuno ? '' : `
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sintomi rilevati</p>
+            ${(json.sintomi||[]).map(s=>`<div class="text-xs text-slate-600 bg-slate-50 rounded-xl px-3 py-2">• ${s}</div>`).join('')}`;
+
+        document.getElementById('diseaseTreatment').innerHTML = nessuno ? '' : `
+            <p class="text-[10px] font-bold text-orange-500 uppercase tracking-wider mb-1">💊 Trattamento</p>
+            <p class="text-sm text-orange-800 font-semibold">${json.trattamento||''}</p>
+            ${json.prodotto?`<p class="text-xs text-orange-600 mt-1">🛒 <strong>${json.prodotto}</strong></p>`:''}`;
+
+        document.getElementById('diseasePrevenzione').innerHTML = json.prevenzione
+            ? `<p class="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1">🛡️ Prevenzione</p><p class="text-xs text-blue-800">${json.prevenzione}</p>` : '';
+
+        document.getElementById('diseaseResult').classList.remove('hidden');
+        await loadPlants(); renderDetail(currentPlantId);
+    } catch(err) { alert("Diagnosi fallita: " + err.message); }
+    finally { document.getElementById('diseaseLoader').classList.add('hidden'); }
+}
+
+// ==========================================
+// DIARIO FOTOGRAFICO
+// ==========================================
+function openDiaryModal(plantId) {
+    currentPlantId = plantId;
+    const plant = plants.find(p=>String(p.id)===String(plantId));
+    if (!plant) return;
+    const logs = [...(plant.health_logs||[]).map(l=>({...l,_type:'health'})), ...(plant.disease_logs||[]).map(l=>({...l,_type:'disease'}))]
+        .sort((a,b)=>new Date(b.checked_at)-new Date(a.checked_at));
+
+    const content = document.getElementById('diaryContent');
+    if (!logs.length) {
+        content.innerHTML = `<div class="text-center py-10 text-slate-300 font-bold text-sm">Nessuna analisi ancora.<br><span class="text-3xl mt-2 block">📷</span><br>Usa 🔬 Salute o 🔍 Diagnosi per iniziare.</div>`;
+    } else {
+        content.innerHTML = logs.map(log => {
+            const date = new Date(log.checked_at).toLocaleDateString('it-IT');
+            const time = new Date(log.checked_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+            if (log._type==='health') {
+                const color = log.score>=70?'#22c55e':log.score>=40?'#f97316':'#ef4444';
+                const label = log.score>=70?'Ottima':log.score>=40?'Discreta':'Critica';
+                return `<div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    ${log.img_url?`<img src="${log.img_url}" class="w-full h-40 object-cover">`:''}
+                    <div class="p-4 space-y-2">
+                        <div class="flex justify-between items-center"><span class="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-full">🔬 Salute</span><span class="text-[10px] text-slate-400">${date} ${time}</span></div>
+                        <div class="health-bar"><div class="health-fill" style="width:${log.score}%;background:${color}"></div></div>
+                        <p class="text-xs font-bold" style="color:${color}">${log.score}% — ${label}</p>
+                        <p class="text-xs text-slate-600">${log.report||''}</p>
+                    </div>
+                </div>`;
+            } else {
+                const nessuno = log.problema==='nessuno';
+                return `<div class="bg-white rounded-2xl border ${nessuno?'border-green-100':'border-red-100'} shadow-sm overflow-hidden">
+                    ${log.img_url?`<img src="${log.img_url}" class="w-full h-40 object-cover">`:''}
+                    <div class="p-4 space-y-2">
+                        <div class="flex justify-between items-center"><span class="text-xs font-bold ${nessuno?'text-green-600 bg-green-50':'text-red-600 bg-red-50'} px-2 py-1 rounded-full">🔍 ${nessuno?'Sano':'Diagnosi'}</span><span class="text-[10px] text-slate-400">${date} ${time}</span></div>
+                        ${!nessuno?`<p class="text-xs font-bold text-red-600">${log.problema} — Gravità ${log.gravita}/5</p><p class="text-xs text-slate-600">${log.trattamento||''}</p>`:`<p class="text-xs text-green-600 font-bold">Nessun problema rilevato ✅</p>`}
+                    </div>
+                </div>`;
+            }
+        }).join('');
+    }
+    openModal('diaryModal');
+}
+
+// ==========================================
+// ELIMINA
+// ==========================================
+window.deleteP = async (id) => {
+    const plant = plants.find(p => String(p.id) === String(id));
+    if (!plant) return;
+
+    const healthCount = (plant.health_logs||[]).length;
+    const diseaseCount = (plant.disease_logs||[]).length;
+    const taskCount = (plant.tasks||[]).length;
+
+    const msg = [
+        `⚠️ Stai per eliminare "${plant.name}" definitivamente.`,
+        ``,
+        `Verrà eliminato tutto:`,
+        `• ${taskCount} scadenze di cura`,
+        healthCount > 0 ? `• ${healthCount} analisi di salute con foto` : null,
+        diseaseCount > 0 ? `• ${diseaseCount} diagnosi malattie con foto` : null,
+        `• Foto principale della pianta`,
+        ``,
+        `Questa azione è irreversibile. Sei sicuro?`
+    ].filter(l => l !== null).join('\n');
+
+    if (!confirm(msg)) return;
+
+    // 1. Raccogli tutti i path delle immagini su Storage da eliminare
+    const imgPaths = [];
+    if (plant.img_url) {
+        const path = extractStoragePath(plant.img_url);
+        if (path) imgPaths.push(path);
+    }
+    (plant.health_logs||[]).forEach(l => {
+        if (l.img_url) { const p = extractStoragePath(l.img_url); if (p) imgPaths.push(p); }
+    });
+    (plant.disease_logs||[]).forEach(l => {
+        if (l.img_url) { const p = extractStoragePath(l.img_url); if (p) imgPaths.push(p); }
+    });
+
+    // 2. Elimina immagini da Storage (ON CASCADE non copre storage)
+    if (imgPaths.length > 0) {
+        await sb.storage.from(STORAGE_BUCKET).remove(imgPaths);
+    }
+
+    // 3. Elimina dati DB (tasks, health_logs, disease_logs eliminati in cascade da Supabase)
+    await sb.from('plants').delete().eq('id', id);
+
+    await loadPlants();
+    navigate('database');
+    showToast(`"${plant.name}" eliminata definitivamente.`, 'info');
+};
+
+function extractStoragePath(publicUrl) {
+    // Estrae il path relativo dall'URL pubblico Supabase
+    // es: https://xxx.supabase.co/storage/v1/object/public/BUCKET/plants/file.jpg → plants/file.jpg
+    try {
+        const marker = `/object/public/${STORAGE_BUCKET}/`;
+        const idx = publicUrl.indexOf(marker);
+        if (idx === -1) return null;
+        return publicUrl.slice(idx + marker.length);
+    } catch(_) { return null; }
+}
+
+// ==========================================
+// STATS & INIT
+// ==========================================
+function updateStats() {
+    document.getElementById('plantCount').innerText = `Hai ${plants.length} piante registrate.`;
+    const s = getSeason();
+    document.getElementById('seasonLabel').textContent = `${getSeasonEmoji()} ${s.charAt(0).toUpperCase()+s.slice(1)} — cadenze stagionali attive`;
+}
+
+// ==========================================
+// CONFIGURAZIONE API KEY
+// ==========================================
+function toggleKeyVisibility() {
+    const inp = document.getElementById('geminiKeyInput');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function saveApiKey() {
+    const key = document.getElementById('geminiKeyInput').value.trim();
+    const status = document.getElementById('keyStatus');
+    if (!key.startsWith('AIza') || key.length < 30) {
+        status.textContent = '❌ Chiave non valida. Deve iniziare con AIza...';
+        status.className = 'text-xs font-bold px-3 py-2 rounded-xl bg-red-50 text-red-600';
+        status.classList.remove('hidden');
+        return;
+    }
+    status.textContent = '⏳ Verifico la chiave...';
+    status.className = 'text-xs font-bold px-3 py-2 rounded-xl bg-yellow-50 text-yellow-600';
+    status.classList.remove('hidden');
+
+    // Salva senza testare — il test consumerebbe quota inutilmente.
+    // La chiave verrà verificata al primo utilizzo reale.
+    localStorage.setItem('gt_gemini_key', key);
+    status.textContent = '✅ Chiave salvata! Verrà verificata al primo utilizzo.';
+    status.className = 'text-xs font-bold px-3 py-2 rounded-xl bg-green-50 text-green-600';
+    document.getElementById('statusLed').style.backgroundColor = '#22c55e';
+    setTimeout(() => closeModal('configModal'), 1500);
+}
+
+window.onload = async () => {
+    const now = new Date();
+    calYear=now.getFullYear(); calMonth=now.getMonth(); calSelectedDay=now.getDate();
+
+    // Carica chiave salvata nel campo
+    const savedKey = localStorage.getItem('gt_gemini_key');
+    if (savedKey) {
+        document.getElementById('geminiKeyInput').value = savedKey;
+        document.getElementById('statusLed').style.backgroundColor = '#22c55e';
+    } else {
+        // Prima apertura: mostra subito il modal configurazione
+        setTimeout(() => openModal('configModal'), 600);
+    }
+    
+    requestNotificationPermission(); //Chiede il permesso per i popup di sistema
+
+    await loadPlants();
+    
+    setTimeout(checkDeadlines, 2000); // Esegue il controllo dopo 2 secondi dal caricamento
+    navigate('home');
+};
+</script>
+</body>
+</html>
