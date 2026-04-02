@@ -674,6 +674,13 @@ function checkAndNotifyDeadlines() {
 // CARICA PIANTE DA SUPABASE
 // ==========================================
 async function loadPlants() {
+    if (!sb) {
+        console.warn('loadPlants: Supabase non inizializzato, uso cache locale.');
+        plants = JSON.parse(localStorage.getItem('gt_v4_cache') || '[]');
+        updateStats();
+        renderHomeUpcoming();
+        return;
+    }
     showSync(true);
     try {
         const { data, error } = await sb
@@ -685,6 +692,7 @@ async function loadPlants() {
         plants = data || [];
         localStorage.setItem('gt_v4_cache', JSON.stringify(plants));
     } catch(err) {
+        console.error('loadPlants error:', err.message);
         plants = JSON.parse(localStorage.getItem('gt_v4_cache') || '[]');
     } finally {
         showSync(false);
@@ -1733,30 +1741,26 @@ async function saveApiKey() {
 
 window.onload = async () => {
     const now = new Date();
-    calYear=now.getFullYear(); calMonth=now.getMonth(); calSelectedDay=now.getDate();
-     
-      // Popola i campi nel modal se esistono dati salvati
+    calYear = now.getFullYear(); calMonth = now.getMonth(); calSelectedDay = now.getDate();
+
+    // Popola i campi nel modal se esistono dati salvati
     document.getElementById('sbUrlInput').value = localStorage.getItem('gt_supabase_url') || "";
     document.getElementById('sbKeyInput').value = localStorage.getItem('gt_supabase_key') || "";
     document.getElementById('geminiKeyInput').value = localStorage.getItem('gt_gemini_key') || "";
 
-    // Prova a connettere Supabase all'avvio
-    const savedKey = localStorage.getItem('gt_gemini_key');
-         if (initSupabase() && savedKey) {
-             document.getElementById('geminiKeyInput').value = savedKey;
-             document.getElementById('statusLed').style.backgroundColor = '#22c55e';
-             await loadPlants();
-        } else {
-            openModal('configModal'); // Apri impostazioni se manca la config
-        }
-    
-    requestNotificationPermission(); //Chiede il permesso per i popup di sistema
+    // Inizializza Supabase (indipendente dalla Gemini key)
+    if (initSupabase()) {
+        document.getElementById('statusLed').style.backgroundColor = '#22c55e';
+        await loadPlants();
+    } else {
+        openModal('configModal'); // Apri impostazioni se mancano URL o key Supabase
+    }
 
-    await loadPlants();
-    
-    setTimeout(checkDeadlines, 2000); // Esegue il controllo dopo 2 secondi dal caricamento
+    requestNotificationPermission();
+    setTimeout(checkDeadlines, 2000);
     navigate('home');
 };
 </script>
 </body>
 </html>
+
