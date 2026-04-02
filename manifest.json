@@ -1,7 +1,7 @@
 {
   "name": "GreenThumb AI",
   "short_name": "GreenThumb",
-  "start_url": "GreenThumb7.html",
+  "start_url": "index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#16a34a",
