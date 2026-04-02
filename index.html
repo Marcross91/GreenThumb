@@ -319,6 +319,7 @@
 let SUPABASE_URL  = "";
 let SUPABASE_ANON = "";
 let STORAGE_BUCKET = "greenthumbfile"; // Supabase converte i nomi bucket in lowercase internamente
+let sb = null;
 // La chiave Gemini viene salvata nel localStorage dal form di configurazione
 function getGeminiKey() { return localStorage.getItem('gt_gemini_key') || ''; }
 
