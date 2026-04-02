@@ -33,6 +33,50 @@
 </head>
 <body class="text-slate-900 overflow-x-hidden">
 
+<!-- ==========================================
+     SCHERMATA LOGIN / REGISTRAZIONE
+     ========================================== -->
+<div id="authScreen" class="fixed inset-0 z-[200] bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center p-4">
+    <div class="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl space-y-6">
+        <!-- Logo -->
+        <div class="text-center space-y-2">
+            <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto text-4xl">🌿</div>
+            <h1 class="text-2xl font-extrabold text-green-900">GreenThumb</h1>
+            <p class="text-xs text-slate-400 font-semibold">La tua giungla personale</p>
+        </div>
+
+        <!-- Tab login / registrati -->
+        <div class="flex bg-slate-100 rounded-2xl p-1">
+            <button id="tabLogin" onclick="switchAuthTab('login')"
+                class="flex-1 py-2 rounded-xl text-sm font-extrabold transition-all bg-white shadow text-green-700">
+                Accedi
+            </button>
+            <button id="tabRegister" onclick="switchAuthTab('register')"
+                class="flex-1 py-2 rounded-xl text-sm font-extrabold transition-all text-slate-400">
+                Registrati
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <input type="email" id="authEmail" placeholder="Email"
+                class="w-full bg-slate-50 rounded-2xl py-4 px-5 text-sm outline-none border border-transparent focus:border-green-500 transition-all">
+            <input type="password" id="authPassword" placeholder="Password"
+                class="w-full bg-slate-50 rounded-2xl py-4 px-5 text-sm outline-none border border-transparent focus:border-green-500 transition-all">
+        </div>
+
+        <div id="authError" class="hidden text-xs font-bold px-4 py-3 rounded-xl bg-red-50 text-red-600"></div>
+
+        <button id="authBtn" onclick="doAuth()"
+            class="w-full bg-green-600 text-white py-4 rounded-2xl font-extrabold shadow-lg active:scale-95 transition text-sm">
+            Accedi
+        </button>
+
+        <p class="text-center text-[10px] text-slate-400 leading-relaxed">
+            Le tue credenziali Supabase devono essere già configurate nelle impostazioni ⚙️
+        </p>
+    </div>
+</div>
+
 <div class="max-w-md mx-auto bg-white min-h-screen shadow-2xl relative border-x border-slate-100">
 
     <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-50 p-4 flex items-center justify-between">
@@ -270,8 +314,25 @@
 <!-- MODAL CONFIGURAZIONE API KEY -->
 <div id="configModal" class="modal-overlay">
     <div class="bg-white rounded-[32px] w-full max-w-sm p-6 space-y-5 shadow-2xl">
-        <h3 class="font-extrabold text-slate-800 text-lg">Impostazioni API ⚙️</h3>
-        
+        <div class="flex items-center justify-between">
+            <h3 class="font-extrabold text-slate-800 text-lg">Impostazioni ⚙️</h3>
+            <button onclick="closeModal('configModal')" class="p-2 text-slate-400">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <!-- Utente loggato -->
+        <div id="loggedUserBox" class="hidden bg-green-50 rounded-2xl px-4 py-3 flex items-center justify-between">
+            <div>
+                <p class="text-[10px] font-extrabold text-green-600 uppercase tracking-wider">Connesso come</p>
+                <p id="loggedUserEmail" class="text-sm font-bold text-green-800 truncate max-w-[180px]"></p>
+            </div>
+            <button onclick="doLogout()"
+                class="bg-red-100 text-red-600 font-extrabold text-xs px-3 py-2 rounded-xl active:scale-95 transition">
+                Logout
+            </button>
+        </div>
+
         <div class="space-y-3">
             <label class="text-[10px] font-extrabold text-slate-400 uppercase ml-1">Configurazione Supabase</label>
             <input type="text" id="sbUrlInput" placeholder="URL Progetto (https://...)" 
@@ -290,7 +351,7 @@
         <button onclick="saveConfig()" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-extrabold shadow-lg active:scale-95 transition">
             Salva Configurazione
         </button>
-        </div>
+    </div>
 </div>
 
 
@@ -318,25 +379,128 @@
 // ==========================================
 let SUPABASE_URL  = "";
 let SUPABASE_ANON = "";
-let STORAGE_BUCKET = "greenthumbfile"; // Supabase converte i nomi bucket in lowercase internamente
+let STORAGE_BUCKET = "greenthumbfile";
 let sb = null;
-// La chiave Gemini viene salvata nel localStorage dal form di configurazione
+let currentUser = null; // utente Supabase Auth corrente
+
 function getGeminiKey() { return localStorage.getItem('gt_gemini_key') || ''; }
 
 function initSupabase() {
     const url = localStorage.getItem('gt_supabase_url');
     const key = localStorage.getItem('gt_supabase_key');
-
     if (url && key) {
         SUPABASE_URL = url;
         SUPABASE_ANON = key;
-        // Inizializza il client Supabase (richiede la libreria già caricata nell'head)
-        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-        document.getElementById('statusLed').style.backgroundColor = "#22c55e"; // Verde se connesso
+        sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+            auth: { persistSession: true, autoRefreshToken: true }
+        });
+        document.getElementById('statusLed').style.backgroundColor = "#22c55e";
         return true;
     }
-    document.getElementById('statusLed').style.backgroundColor = "#ef4444"; // Rosso se manca config
+    document.getElementById('statusLed').style.backgroundColor = "#ef4444";
     return false;
+}
+
+// ==========================================
+// AUTH — Login / Registrazione / Logout
+// ==========================================
+let _authTab = 'login';
+
+function switchAuthTab(tab) {
+    _authTab = tab;
+    const isLogin = tab === 'login';
+    document.getElementById('tabLogin').className    = `flex-1 py-2 rounded-xl text-sm font-extrabold transition-all ${isLogin  ? 'bg-white shadow text-green-700' : 'text-slate-400'}`;
+    document.getElementById('tabRegister').className = `flex-1 py-2 rounded-xl text-sm font-extrabold transition-all ${!isLogin ? 'bg-white shadow text-green-700' : 'text-slate-400'}`;
+    document.getElementById('authBtn').textContent   = isLogin ? 'Accedi' : 'Crea account';
+    document.getElementById('authError').classList.add('hidden');
+}
+
+async function doAuth() {
+    const email    = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value.trim();
+    const errBox   = document.getElementById('authError');
+    const btn      = document.getElementById('authBtn');
+
+    if (!email || !password) {
+        errBox.textContent = '⚠️ Inserisci email e password.';
+        errBox.classList.remove('hidden');
+        return;
+    }
+    if (!sb) {
+        errBox.textContent = "⚠️ Configura prima Supabase nelle impostazioni ⚙️ (in alto a destra nell'app).";
+        errBox.classList.remove('hidden');
+        return;
+    }
+
+    btn.textContent = '⏳ Attendere...';
+    btn.disabled = true;
+    errBox.classList.add('hidden');
+
+    try {
+        let result;
+        if (_authTab === 'login') {
+            result = await sb.auth.signInWithPassword({ email, password });
+        } else {
+            result = await sb.auth.signUp({ email, password });
+        }
+
+        if (result.error) throw result.error;
+
+        // signUp restituisce user ma senza sessione finché non verifica email
+        // se email confirmation è disabilitata in Supabase, la sessione c'è subito
+        const session = result.data?.session;
+        const user    = result.data?.user;
+
+        if (_authTab === 'register' && !session) {
+            errBox.className = 'text-xs font-bold px-4 py-3 rounded-xl bg-green-50 text-green-700';
+            errBox.textContent = "✅ Registrazione completata! Controlla la tua email per confermare l'account, poi accedi.";
+            errBox.classList.remove('hidden');
+            btn.textContent = _authTab === 'login' ? 'Accedi' : 'Crea account';
+            btn.disabled = false;
+            return;
+        }
+
+        currentUser = user;
+        onLoginSuccess(user);
+    } catch(err) {
+        const msg = err.message || 'Errore sconosciuto';
+        errBox.textContent = '❌ ' + (msg.includes('Invalid login') ? 'Email o password errati.' :
+                                      msg.includes('already registered') ? 'Email già registrata.' :
+                                      msg.includes('Password should') ? 'Password troppo corta (min 6 caratteri).' : msg);
+        errBox.classList.remove('hidden');
+    } finally {
+        btn.textContent = _authTab === 'login' ? 'Accedi' : 'Crea account';
+        btn.disabled = false;
+    }
+}
+
+function onLoginSuccess(user) {
+    currentUser = user;
+    // Mostra l'app, nascondi login
+    document.getElementById('authScreen').style.display = 'none';
+    // Aggiorna la box utente nel configModal
+    document.getElementById('loggedUserBox').classList.remove('hidden');
+    document.getElementById('loggedUserEmail').textContent = user.email;
+    document.getElementById('statusLed').style.backgroundColor = '#22c55e';
+    loadPlants();
+    setTimeout(checkDeadlines, 2000);
+}
+
+async function doLogout() {
+    if (!confirm('Sei sicuro di voler uscire?')) return;
+    await sb.auth.signOut();
+    currentUser = null;
+    plants = [];
+    closeModal('configModal');
+    document.getElementById('loggedUserBox').classList.add('hidden');
+    document.getElementById('loggedUserEmail').textContent = '';
+    document.getElementById('authEmail').value = '';
+    document.getElementById('authPassword').value = '';
+    document.getElementById('authError').classList.add('hidden');
+    document.getElementById('authScreen').style.display = 'flex';
+    document.getElementById('statusLed').style.backgroundColor = '#ef4444';
+    navigate('home');
+    updateStats();
 }
 
 function saveConfig() {
@@ -400,8 +564,10 @@ let calYear, calMonth, calSelectedDay;
 let currentPlantId = null;
 let healthBase64 = null, diseaseBase64 = null;
 let userLocation = "Italia centro-nord";
+// deviceId mantenuto solo come fallback legacy — ora si usa currentUser.id (Supabase Auth)
 let deviceId = localStorage.getItem('gt_device_id');
 if (!deviceId) { deviceId = crypto.randomUUID(); localStorage.setItem('gt_device_id', deviceId); }
+function getUserId() { return currentUser?.id || deviceId; }
 
 // ==========================================
 // UTILITY STAGIONI
@@ -674,8 +840,8 @@ function checkAndNotifyDeadlines() {
 // CARICA PIANTE DA SUPABASE
 // ==========================================
 async function loadPlants() {
-    if (!sb) {
-        console.warn('loadPlants: Supabase non inizializzato, uso cache locale.');
+    if (!sb || !currentUser) {
+        console.warn('loadPlants: Supabase o utente non disponibile, uso cache locale.');
         plants = JSON.parse(localStorage.getItem('gt_v4_cache') || '[]');
         updateStats();
         renderHomeUpcoming();
@@ -686,7 +852,7 @@ async function loadPlants() {
         const { data, error } = await sb
             .from('plants')
             .select('*, tasks(*), health_logs(*), disease_logs(*)')
-            .eq('device_id', deviceId)
+            .eq('user_id', currentUser.id)
             .order('created_at', { ascending: false });
         if (error) throw new Error(`Database error: ${error.message}`);
         plants = data || [];
@@ -842,7 +1008,7 @@ async function savePlant() {
             imgUrl = null;
         }
         const { data: plant, error: pe } = await sb.from('plants').insert({
-            device_id: deviceId, name, species,
+            user_id: currentUser.id, device_id: deviceId, name, species,
             description: window._tempInfo?.desc || '',
             img_url: imgUrl || window._addBase64Preview || '',
             care_info: {
@@ -1743,24 +1909,43 @@ window.onload = async () => {
     const now = new Date();
     calYear = now.getFullYear(); calMonth = now.getMonth(); calSelectedDay = now.getDate();
 
-    // Popola i campi nel modal se esistono dati salvati
-    document.getElementById('sbUrlInput').value = localStorage.getItem('gt_supabase_url') || "";
-    document.getElementById('sbKeyInput').value = localStorage.getItem('gt_supabase_key') || "";
+    // Popola i campi del modal con i dati salvati
+    document.getElementById('sbUrlInput').value    = localStorage.getItem('gt_supabase_url') || "";
+    document.getElementById('sbKeyInput').value    = localStorage.getItem('gt_supabase_key') || "";
     document.getElementById('geminiKeyInput').value = localStorage.getItem('gt_gemini_key') || "";
 
-    // Inizializza Supabase (indipendente dalla Gemini key)
-    if (initSupabase()) {
-        document.getElementById('statusLed').style.backgroundColor = '#22c55e';
-        await loadPlants();
-    } else {
-        openModal('configModal'); // Apri impostazioni se mancano URL o key Supabase
+    navigate('home');
+    requestNotificationPermission();
+
+    if (!initSupabase()) {
+        // Nessuna config Supabase: mostra login con messaggio
+        document.getElementById('authScreen').style.display = 'flex';
+        return;
     }
 
-    requestNotificationPermission();
-    setTimeout(checkDeadlines, 2000);
-    navigate('home');
+    // Controlla se c'è già una sessione attiva (persistente tra ricariche)
+    const { data: { session } } = await sb.auth.getSession();
+    if (session?.user) {
+        // Sessione valida → entra direttamente nell'app
+        onLoginSuccess(session.user);
+    } else {
+        // Nessuna sessione → mostra schermata login
+        document.getElementById('authScreen').style.display = 'flex';
+    }
+
+    // Ascolta cambi di sessione (es. token refresh, logout da altra scheda)
+    sb.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+            currentUser = null;
+            plants = [];
+            document.getElementById('authScreen').style.display = 'flex';
+            document.getElementById('loggedUserBox').classList.add('hidden');
+            document.getElementById('statusLed').style.backgroundColor = '#ef4444';
+        } else if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+            onLoginSuccess(session.user);
+        }
+    });
 };
 </script>
 </body>
 </html>
-
