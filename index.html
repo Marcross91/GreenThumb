@@ -334,6 +334,19 @@
             </button>
         </div>
 
+        <!-- Zona pericolo — visibile solo dopo login -->
+        <div id="dangerZone" class="hidden space-y-2">
+            <label class="text-[10px] font-extrabold text-red-400 uppercase ml-1 tracking-wider">⚠️ Zona pericolosa</label>
+            <button onclick="deleteAllData()"
+                class="w-full py-3 rounded-2xl border-2 border-red-200 text-red-500 font-extrabold text-xs active:scale-95 transition hover:bg-red-50">
+                🗑️ Cancella tutti i dati
+            </button>
+            <button onclick="deleteAccount()"
+                class="w-full py-3 rounded-2xl bg-red-500 text-white font-extrabold text-xs active:scale-95 transition shadow">
+                💀 Elimina account
+            </button>
+        </div>
+
         <div class="space-y-3">
             <label class="text-[10px] font-extrabold text-slate-400 uppercase ml-1">Configurazione Supabase</label>
             <input type="text" id="sbUrlInput" placeholder="URL Progetto (https://...)" 
@@ -482,6 +495,7 @@ function onLoginSuccess(user) {
     // Aggiorna la box utente nel configModal
     document.getElementById('loggedUserBox').classList.remove('hidden');
     document.getElementById('loggedUserEmail').textContent = user.email;
+    document.getElementById('dangerZone').classList.remove('hidden');
     document.getElementById('statusLed').style.backgroundColor = '#22c55e';
     loadPlants();
     setTimeout(checkDeadlines, 2000);
@@ -494,6 +508,7 @@ async function doLogout() {
     plants = [];
     closeModal('configModal');
     document.getElementById('loggedUserBox').classList.add('hidden');
+    document.getElementById('dangerZone').classList.add('hidden');
     document.getElementById('loggedUserEmail').textContent = '';
     document.getElementById('authEmail').value = '';
     document.getElementById('authPassword').value = '';
@@ -502,6 +517,107 @@ async function doLogout() {
     document.getElementById('statusLed').style.backgroundColor = '#ef4444';
     navigate('home');
     updateStats();
+}
+
+// Raccoglie tutti i path delle foto di un utente dallo Storage
+async function collectUserImgPaths() {
+    const { data, error } = await sb
+        .from('plants')
+        .select('img_url, health_logs(img_url), disease_logs(img_url)')
+        .eq('user_id', currentUser.id);
+    if (error || !data) return [];
+    const paths = [];
+    data.forEach(plant => {
+        if (plant.img_url) { const p = extractStoragePath(plant.img_url); if (p) paths.push(p); }
+        (plant.health_logs || []).forEach(l => { if (l.img_url) { const p = extractStoragePath(l.img_url); if (p) paths.push(p); } });
+        (plant.disease_logs || []).forEach(l => { if (l.img_url) { const p = extractStoragePath(l.img_url); if (p) paths.push(p); } });
+    });
+    return paths;
+}
+
+// Elimina le foto dallo Storage in batch da 100 (limite Supabase)
+async function deleteImgsFromStorage(paths) {
+    if (!paths.length) return;
+    const BATCH = 100;
+    for (let i = 0; i < paths.length; i += BATCH) {
+        await sb.storage.from(STORAGE_BUCKET).remove(paths.slice(i, i + BATCH));
+    }
+}
+
+async function deleteAllData() {
+    if (!currentUser || !sb) return;
+    if (!confirm('Sei sicuro? Verranno eliminate TUTTE le tue piante, foto, scadenze e analisi. Questa azione è irreversibile.')) return;
+    if (!confirm('Ultima conferma: cancello tutto, comprese tutte le foto?')) return;
+    try {
+        // 1. Raccogli path foto prima di eliminare i record
+        const imgPaths = await collectUserImgPaths();
+        // 2. Elimina foto dallo Storage
+        await deleteImgsFromStorage(imgPaths);
+        // 3. Elimina tutti i record DB (tasks/health/disease in cascade)
+        const { error } = await sb.from('plants').delete().eq('user_id', currentUser.id);
+        if (error) throw error;
+        plants = [];
+        localStorage.removeItem('gt_v4_cache');
+        closeModal('configModal');
+        navigate('home');
+        updateStats();
+        showToast(`Tutti i dati eliminati (${imgPaths.length} foto rimosse).`, 'info');
+    } catch(err) {
+        alert('Errore durante la cancellazione: ' + err.message);
+    }
+}
+
+async function deleteAccount() {
+    if (!currentUser || !sb) return;
+    if (!confirm('Sei sicuro di voler eliminare il tuo account? Verranno cancellati tutti i dati, tutte le foto e il tuo account. Operazione irreversibile.')) return;
+    if (!confirm('Ultima conferma: elimino account, dati e foto?')) return;
+    try {
+        // 1. Raccogli path foto prima di eliminare i record
+        const imgPaths = await collectUserImgPaths();
+        // 2. Elimina foto dallo Storage
+        await deleteImgsFromStorage(imgPaths);
+        // 3. Elimina tutti i record DB (cascade)
+        await sb.from('plants').delete().eq('user_id', currentUser.id);
+        // 4. Chiama la Edge Function per eliminare l'utente da Supabase Auth
+        try {
+            const { data: { session } } = await sb.auth.getSession();
+            const res = await fetch(
+                `${SUPABASE_URL}/functions/v1/delete-user`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+            if (!res.ok) {
+                const errData = await res.json();
+                console.warn('Edge function error:', errData.error);
+                // Continua comunque — i dati sono già stati eliminati
+            }
+        } catch(edgeErr) {
+            console.warn('Edge function non raggiungibile:', edgeErr.message);
+        }
+        await sb.auth.signOut();
+        currentUser = null;
+        plants = [];
+        localStorage.removeItem('gt_v4_cache');
+        closeModal('configModal');
+        document.getElementById('loggedUserBox').classList.add('hidden');
+        document.getElementById('dangerZone').classList.add('hidden');
+        document.getElementById('loggedUserEmail').textContent = '';
+        document.getElementById('authEmail').value = '';
+        document.getElementById('authPassword').value = '';
+        document.getElementById('authError').classList.add('hidden');
+        document.getElementById('authScreen').style.display = 'flex';
+        document.getElementById('statusLed').style.backgroundColor = '#ef4444';
+        navigate('home');
+        updateStats();
+        showToast('Account e dati eliminati. Arrivederci! 🌿', 'info');
+    } catch(err) {
+        alert('Errore durante la cancellazione account: ' + err.message);
+    }
 }
 
 function saveConfig() {
@@ -544,7 +660,7 @@ function saveConfig() {
 const GEMINI_MODELS = [
     { endpoint:"v1beta", model:"gemini-2.0-flash" },
     { endpoint:"v1beta", model:"gemini-2.0-flash-lite" },
-    { endpoint:"v1beta", model:"gemini-2.5-flash" },
+     { endpoint:"v1beta", model:"gemini-2.5-flash" },
 ];
 
 const CARE_TYPES = {
@@ -1950,6 +2066,7 @@ window.onload = async () => {
             plants = [];
             document.getElementById('authScreen').style.display = 'flex';
             document.getElementById('loggedUserBox').classList.add('hidden');
+            document.getElementById('dangerZone').classList.add('hidden');
             document.getElementById('statusLed').style.backgroundColor = '#ef4444';
         } else if (event === 'SIGNED_IN' && session?.user && !currentUser) {
             onLoginSuccess(session.user);
