@@ -71,9 +71,10 @@
             Accedi
         </button>
 
-        <p class="text-center text-[10px] text-slate-400 leading-relaxed">
-            Le tue credenziali Supabase devono essere già configurate nelle impostazioni ⚙️
-        </p>
+        <button onclick="openConfigFromLogin()"
+            class="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 font-bold text-xs active:scale-95 transition">
+            ⚙️ Configura Supabase &amp; API Key
+        </button>
     </div>
 </div>
 
@@ -889,7 +890,16 @@ function navigate(screenId, plantId = null) {
 }
 
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('open');
+    el.style.zIndex = ''; // ripristina z-index default
+}
+function openConfigFromLogin() {
+    const modal = document.getElementById('configModal');
+    modal.style.zIndex = '300'; // sopra authScreen (z-index 200)
+    modal.classList.add('open');
+}
 
 // ==========================================
 // IDENTIFICAZIONE PIANTA
